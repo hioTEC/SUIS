@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.4"
+readonly VERSION="1.9.5"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -425,8 +425,30 @@ collect_inputs() {
     [[ "$INSTALL_MODE" == "node" ]] && target_dir="$NODE_INSTALL_DIR" || true
     load_env_defaults "$target_dir/.env"
 
-    echo ""
-    log_info "Configuration (Press Enter for default)"
+    # Check for existing installation
+    if [[ -n "$domain" && "$domain" != "localhost" ]]; then
+        echo ""
+        log_info "Existing installation detected:"
+        echo -e "  Domain: ${BOLD}${domain}${NC}"
+        echo -e "  Email:  ${BOLD}${email}${NC}"
+        echo ""
+        if confirm "Keep existing settings?" "y"; then
+            # Keep existing settings, just confirm
+            echo ""
+            log_info "Summary:"
+            echo -e "  Mode:   ${BOLD}${INSTALL_MODE^^}${NC}"
+            echo -e "  Domain: ${BOLD}${domain}${NC}"
+            echo -e "  Email:  ${BOLD}${email}${NC}"
+            echo ""
+            confirm "Proceed with reinstall?" "y" || exit 0
+            return
+        fi
+        echo ""
+        log_info "Enter new configuration:"
+    else
+        echo ""
+        log_info "Configuration (Press Enter for default)"
+    fi
     
     local d_domain="${domain:-localhost}"
     read -r -p "  Enter Domain [${d_domain}]: " in_domain < /dev/tty
@@ -439,11 +461,11 @@ collect_inputs() {
 
     if [[ "$INSTALL_MODE" == "node" ]]; then
         local p_secret="Enter Cluster Secret"
-        [[ -n "$secret" ]] && p_secret="$p_secret [found existing]"
+        [[ -n "$secret" ]] && p_secret="$p_secret [found existing]" || true
         while [[ -z "$secret" ]]; do
             read -r -p "  $p_secret: " in_secret < /dev/tty
-            [[ -n "$in_secret" ]] && secret="$in_secret"
-            [[ -z "$secret" ]] && log_error "Secret is required!"
+            [[ -n "$in_secret" ]] && secret="$in_secret" || true
+            [[ -z "$secret" ]] && log_error "Secret is required!" || true
         done
         log_info "AdGuard Home will be configured with: User: admin | Pass: sui-solo"
     else

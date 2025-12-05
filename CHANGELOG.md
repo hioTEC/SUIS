@@ -2,6 +2,14 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.5] - 2025-12-06
+
+### Added
+- Auto-detect existing installation and show current domain/email
+- Option to keep existing settings or enter new ones during reinstall
+
+---
+
 ## [1.9.4] - 2025-12-06
 
 ### Fixed
