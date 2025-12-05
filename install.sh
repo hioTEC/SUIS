@@ -683,9 +683,12 @@ EOF
         log_warn "Master container may not be fully ready, check logs: docker logs sui-master"
     fi
     
-    setup_shared_gateway
-    generate_shared_caddyfile
-    start_shared_gateway
+    # Only start gateway in standalone master mode (not in --both mode)
+    if [[ "$SHARED_CADDY_MODE" != "true" ]]; then
+        setup_shared_gateway
+        generate_shared_caddyfile
+        start_shared_gateway
+    fi
     
     echo ""
     log_success "Master Installed!"
@@ -733,16 +736,23 @@ install_node() {
     
     create_docker_networks
     
-    # New architecture: Sing-box MUST occupy 80/443
-    check_ports_avail 80 443 53
+    # Check ports only if not in shared mode
+    if [[ "$SHARED_CADDY_MODE" != "true" ]]; then
+        check_ports_avail 80 443 53
+    else
+        check_ports_avail 53
+    fi
     
     local path_prefix=$(echo -n "${SALT}:${secret}" | sha256sum | cut -c1-16)
     
-    mkdir -p "$NODE_INSTALL_DIR/config/singbox" "$NODE_INSTALL_DIR/config/adguard/conf" "$NODE_INSTALL_DIR/config/caddy" "$NODE_INSTALL_DIR/config/acme"
+    mkdir -p "$NODE_INSTALL_DIR/config/singbox" "$NODE_INSTALL_DIR/config/adguard/conf" "$NODE_INSTALL_DIR/config/caddy"
     cp -r "${SCRIPT_DIR}/node/"* "$NODE_INSTALL_DIR/"
     
-    # Generate docker-compose.yml for new architecture
-    cat > "$NODE_INSTALL_DIR/docker-compose.yml" << 'EOF'
+    # Generate docker-compose.yml based on mode
+    if [[ "$SHARED_CADDY_MODE" == "true" ]]; then
+        # Shared mode: sing-box handles 443 with SNI routing, forwards master traffic to caddy
+        log_info "Generating docker-compose for SNI routing mode..."
+        cat > "$NODE_INSTALL_DIR/docker-compose.yml" << 'EOF'
 services:
   singbox:
     image: ghcr.io/sagernet/sing-box:latest
@@ -750,29 +760,30 @@ services:
     restart: unless-stopped
     ports:
       - "80:80/tcp"       # ACME HTTP-01 Challenge
-      - "443:443/tcp"     # VLESS + TLS
+      - "443:443/tcp"     # SNI routing (VLESS + Master)
       - "50000-60000:50000-60000/udp"  # Hysteria2 port hopping
     volumes:
-      - ./config/singbox:/etc/sing-box:ro
-      - singbox-acme:/etc/sing-box/acme  # ACME certificates (named volume)
+      - ./config/singbox:/etc/sing-box
     command: ["run", "-c", "/etc/sing-box/config.json"]
-    networks: [sui-node-net]
+    networks:
+      - sui-node-net
+      - sui-master-net
     cap_add: [NET_ADMIN]
-    cap_drop: [ALL]
     
   caddy:
     image: caddy:2-alpine
     container_name: sui-caddy
     restart: unless-stopped
-    expose: ["80"]  # Internal network only
+    expose: ["443"]
     volumes:
       - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./config/caddy/site:/usr/share/caddy:ro
+      - ./config/caddy/certs:/etc/caddy/certs:ro
       - ./config/caddy/logs:/var/log/caddy
-    networks: [sui-node-net]
-    cap_drop: [ALL]
+    networks:
+      - sui-node-net
+      - sui-master-net
     security_opt:
-      - seccomp:unconfined  # Fix for old kernel/libseccomp compatibility
+      - seccomp:unconfined
     
   agent:
     build: .
@@ -787,7 +798,6 @@ services:
       - ./config:/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [sui-node-net]
-    cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     
   adguard:
@@ -799,24 +809,186 @@ services:
       - ./config/adguard/conf:/opt/adguardhome/conf
     networks: [sui-node-net]
     ports: ["53:53/tcp", "53:53/udp"]
-    cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE, CHOWN, SETUID, SETGID]
 
-volumes:
-  singbox-acme:  # Named volume for ACME certificates
+networks:
+  sui-node-net:
+    external: true
+  sui-master-net:
+    external: true
+EOF
+    else
+        # Standalone mode: sing-box handles 80/443 directly
+        log_info "Generating docker-compose for standalone mode..."
+        cat > "$NODE_INSTALL_DIR/docker-compose.yml" << 'EOF'
+services:
+  singbox:
+    image: ghcr.io/sagernet/sing-box:latest
+    container_name: sui-singbox
+    restart: unless-stopped
+    ports:
+      - "80:80/tcp"       # ACME HTTP-01 Challenge
+      - "443:443/tcp"     # VLESS + TLS
+      - "50000-60000:50000-60000/udp"  # Hysteria2 port hopping
+    volumes:
+      - ./config/singbox:/etc/sing-box
+    command: ["run", "-c", "/etc/sing-box/config.json"]
+    networks: [sui-node-net]
+    cap_add: [NET_ADMIN]
+    
+  caddy:
+    image: caddy:2-alpine
+    container_name: sui-caddy
+    restart: unless-stopped
+    expose: ["80"]
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./config/caddy/site:/usr/share/caddy:ro
+      - ./config/caddy/logs:/var/log/caddy
+    networks: [sui-node-net]
+    security_opt:
+      - seccomp:unconfined
+    
+  agent:
+    build: .
+    container_name: sui-agent
+    restart: unless-stopped
+    expose: ["5001"]
+    environment:
+      - CLUSTER_SECRET=${CLUSTER_SECRET}
+      - NODE_DOMAIN=${NODE_DOMAIN}
+      - CONFIG_DIR=/config
+    volumes:
+      - ./config:/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [sui-node-net]
+    security_opt: [no-new-privileges:true]
+    
+  adguard:
+    image: adguard/adguardhome:latest
+    container_name: sui-adguard
+    restart: unless-stopped
+    volumes:
+      - ./config/adguard/work:/opt/adguardhome/work
+      - ./config/adguard/conf:/opt/adguardhome/conf
+    networks: [sui-node-net]
+    ports: ["53:53/tcp", "53:53/udp"]
+    cap_add: [NET_BIND_SERVICE, CHOWN, SETUID, SETGID]
 
 networks:
   sui-node-net:
     external: true
 EOF
+    fi
 
-    # Generate UUID and password for proxies
-    local vless_uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-/')
-    local hy2_password=$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | sha256sum | cut -c1-32)
+    # Generate UUID and password for proxies (or load existing)
+    local vless_uuid hy2_password
+    if [[ -f "$NODE_INSTALL_DIR/.env" ]]; then
+        vless_uuid=$(grep '^VLESS_UUID=' "$NODE_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+        hy2_password=$(grep '^HY2_PASSWORD=' "$NODE_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+    fi
+    [[ -z "$vless_uuid" ]] && vless_uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-/')
+    [[ -z "$hy2_password" ]] && hy2_password=$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | sha256sum | cut -c1-32)
     
-    # Generate sing-box config with VLESS (443) + Hysteria2 (50000-60000)
+    # VLESS always on 443
+    local vless_port=443
+    
+    # Generate sing-box config based on mode
     log_info "Generating Sing-box configuration..."
-    cat > "$NODE_INSTALL_DIR/config/singbox/config.json" << SBEOF
+    
+    if [[ "$SHARED_CADDY_MODE" == "true" ]]; then
+        # SNI routing mode: route master domain to caddy, handle node domain as VLESS
+        log_info "Using SNI routing for master domain: ${master_domain}"
+        cat > "$NODE_INSTALL_DIR/config/singbox/config.json" << SBEOF
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "tls",
+      "tag": "tls-in",
+      "listen": "::",
+      "listen_port": 443,
+      "sni": {
+        "${master_domain}": "master-tls",
+        "": "vless-tls"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "vless-in",
+      "listen": "127.0.0.1",
+      "listen_port": 10443,
+      "users": [
+        {
+          "uuid": "${vless_uuid}",
+          "flow": "xtls-rprx-vision"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "${domain}",
+        "acme": {
+          "domain": ["${domain}"],
+          "email": "${email}",
+          "provider": "letsencrypt",
+          "data_directory": "/etc/sing-box/acme"
+        }
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hy2-in",
+      "listen": "::",
+      "listen_port": 50000,
+      "users": [
+        {
+          "password": "${hy2_password}"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "${domain}",
+        "acme": {
+          "domain": ["${domain}"],
+          "email": "${email}",
+          "provider": "letsencrypt",
+          "data_directory": "/etc/sing-box/acme"
+        }
+      },
+      "up_mbps": 100,
+      "down_mbps": 100
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "direct",
+      "tag": "master-tls",
+      "override_address": "sui-caddy",
+      "override_port": 443
+    },
+    {
+      "type": "direct",
+      "tag": "vless-tls",
+      "override_address": "127.0.0.1",
+      "override_port": 10443
+    }
+  ],
+  "route": {
+    "rules": [],
+    "final": "direct"
+  }
+}
+SBEOF
+    else
+        # Standalone mode: simple VLESS + Hysteria2
+        cat > "$NODE_INSTALL_DIR/config/singbox/config.json" << SBEOF
 {
   "log": {
     "level": "info",
@@ -843,12 +1015,6 @@ EOF
           "provider": "letsencrypt",
           "data_directory": "/etc/sing-box/acme"
         }
-      },
-      "multiplex": {
-        "enabled": false
-      },
-      "transport": {
-        "type": "tcp"
       }
     },
     {
@@ -872,9 +1038,7 @@ EOF
         }
       },
       "up_mbps": 100,
-      "down_mbps": 100,
-      "ignore_client_bandwidth": false,
-      "masquerade": "https://www.bing.com"
+      "down_mbps": 100
     }
   ],
   "outbounds": [
@@ -889,19 +1053,53 @@ EOF
   }
 }
 SBEOF
+    fi
     
-    # Generate Caddy configuration (internal HTTP only)
+    # Generate Caddy configuration based on mode
     log_info "Generating Caddy configuration..."
-    cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
+    mkdir -p "$NODE_INSTALL_DIR/config/caddy/certs"
+    
+    if [[ "$SHARED_CADDY_MODE" == "true" ]]; then
+        # SNI mode: Caddy receives TLS passthrough from sing-box for master domain
+        # It needs to terminate TLS and reverse proxy to master
+        cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
+# Caddy handles master domain (TLS passthrough from sing-box)
+{
+    email ${email}
+    acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
+
+:443 {
+    tls {
+        on_demand
+    }
+    
+    reverse_proxy sui-master:5000
+    
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
+        -Server
+    }
+    
+    log {
+        output file /var/log/caddy/master.log
+        level ERROR
+    }
+}
+CADDYEOF
+    else
+        # Standalone mode: Caddy handles internal HTTP only
+        cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
 # Caddy runs on internal Docker network only (HTTP)
-# Receives fallback traffic from Sing-box on port 443
 :80 {
-    # Hidden API path (from Sing-box fallback)
+    # Hidden API path
     handle /${path_prefix}/* {
         reverse_proxy agent:5001
     }
     
-    # AdGuard Home Web UI (optional, for internal access)
+    # AdGuard Home Web UI
     handle /adguard/* {
         uri strip_prefix /adguard
         reverse_proxy adguard:3000
@@ -942,7 +1140,6 @@ SBEOF
 </html>\` 200
     }
     
-    # Security headers
     header {
         X-Frame-Options "DENY"
         X-Content-Type-Options "nosniff"
@@ -955,6 +1152,7 @@ SBEOF
     }
 }
 CADDYEOF
+    fi
     
     generate_adguard_config
     
@@ -962,7 +1160,9 @@ CADDYEOF
 CLUSTER_SECRET=${secret}
 NODE_DOMAIN=${domain}
 ACME_EMAIL=${email}
+PATH_PREFIX=${path_prefix}
 VLESS_UUID=${vless_uuid}
+VLESS_PORT=${vless_port}
 HY2_PASSWORD=${hy2_password}
 HY2_PORT_START=50000
 HY2_PORT_END=60000
@@ -1009,8 +1209,8 @@ EOF
         log_success "ACME directory created"
     fi
     
-    # Generate proxy links for display
-    local vless_link="vless://${vless_uuid}@${domain}:443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2,http/1.1&type=tcp#${domain}-VLESS"
+    # Generate proxy links for display (use correct port based on mode)
+    local vless_link="vless://${vless_uuid}@${domain}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2,http/1.1&type=tcp#${domain}-VLESS"
     local hy2_link="hysteria2://${hy2_password}@${domain}:50000?sni=${domain}&alpn=h3#${domain}-Hysteria2"
     
     echo ""
@@ -1020,15 +1220,13 @@ EOF
     echo -e "  ${ARROW} Hidden Path:  ${CYAN}/${path_prefix}${NC}"
     echo ""
     echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}  ${BOLD}PROXY CONFIGURATIONS (New Architecture)${NC}                      ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${BOLD}PROXY CONFIGURATIONS${NC}                                         ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${MAGENTA}║${NC}  ${CYAN}VLESS + XTLS-Vision + TLS (Port 443)${NC}                         ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${CYAN}VLESS + XTLS-Vision + TLS (Port ${vless_port})${NC}                         ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}║${NC}  UUID: ${YELLOW}${vless_uuid}${NC}              ${MAGENTA}║${NC}"
-    echo -e "${MAGENTA}║${NC}  ${GREEN}✓${NC} Standard HTTPS port (more stealthy)                       ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${MAGENTA}║${NC}  ${CYAN}Hysteria2 (Port 50000-60000 UDP)${NC}                             ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}║${NC}  Password: ${YELLOW}${hy2_password}${NC}                        ${MAGENTA}║${NC}"
-    echo -e "${MAGENTA}║${NC}  ${GREEN}✓${NC} Port hopping enabled (anti-blocking)                      ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BOLD}Share Links (copy to client):${NC}"
@@ -1062,7 +1260,7 @@ configure_firewall_prompt() {
 configure_firewall() {
     log_step "Configuring firewall..."
     
-    # Default ports to allow (new architecture)
+    # Default ports to allow
     local default_ports="22 80 443 53"
     local default_ranges="50000-60000"
     
@@ -1070,7 +1268,7 @@ configure_firewall() {
     echo -e "  ${CYAN}Default allowed ports:${NC}"
     echo -e "    22         - SSH"
     echo -e "    80         - HTTP (ACME Challenge)"
-    echo -e "    443        - HTTPS (VLESS + Sing-box)"
+    echo -e "    443        - HTTPS (VLESS / Master Panel)"
     echo -e "    53         - DNS (AdGuard)"
     echo -e "    50000-60000- Hysteria2 UDP (port hopping)"
     echo ""
@@ -1268,14 +1466,22 @@ uninstall() {
 }
 
 #=============================================================================
-# INSTALL BOTH
+# INSTALL BOTH (sing-box Port 443 Native)
+# Architecture:
+#   - sing-box owns 80/443 on host
+#   - Port 443: VLESS+Vision -> sing-box handles directly
+#   - Port 443: non-VLESS (browser) -> fallback to Caddy:80 (internal)
+#   - Port 80: sing-box ACME HTTP-01 challenge (auto-handled)
+#   - Caddy runs on internal network only (no host port binding)
+#   - Caddy:80 routes by Host header to Master or Node services
+#   - Hysteria2 on UDP 50000-60000
 #=============================================================================
 install_both() {
     print_banner
     check_os
     check_root
     
-    log_step "Installing Master + Node on same server"
+    log_step "Installing Master + Node on same server (sing-box SNI mode)"
     echo ""
     
     if [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" ]]; then
@@ -1286,19 +1492,56 @@ install_both() {
     
     check_dependencies
     
-    log_info "Master Configuration"
-    read -r -p "  Enter Master Domain: " master_domain < /dev/tty
-    master_domain=$(echo "$master_domain" | sed 's|https://||g' | sed 's|http://||g' | tr -d '/')
+    # Check for existing installation - Quick reinstall option
+    if [[ -d "$MASTER_INSTALL_DIR" && -f "$MASTER_INSTALL_DIR/.env" ]] && \
+       [[ -d "$NODE_INSTALL_DIR" && -f "$NODE_INSTALL_DIR/.env" ]]; then
+        local existing_master=$(grep '^MASTER_DOMAIN=' "$MASTER_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+        local existing_node=$(grep '^NODE_DOMAIN=' "$NODE_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+        local existing_email=$(grep '^ACME_EMAIL=' "$MASTER_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+        local existing_secret=$(grep '^CLUSTER_SECRET=' "$MASTER_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+        
+        log_warn "Existing installation detected!"
+        echo -e "  Master: ${BOLD}${existing_master}${NC}"
+        echo -e "  Node:   ${BOLD}${existing_node}${NC}"
+        echo ""
+        echo "    1) Quick reinstall (keep existing settings)"
+        echo "    2) Overwrite (enter new settings)"
+        echo "    3) Cancel"
+        read -r -p "  Select [1-3]: " choice < /dev/tty
+        case $choice in
+            1)
+                log_info "Quick reinstall with existing settings..."
+                master_domain="$existing_master"
+                node_domain="$existing_node"
+                email="$existing_email"
+                secret="$existing_secret"
+                ;;
+            2)
+                log_info "Enter new configuration..."
+                ;;
+            *)
+                log_info "Cancelled"
+                exit 0
+                ;;
+        esac
+    fi
     
-    log_info "Node Configuration"
-    read -r -p "  Enter Node Domain: " node_domain < /dev/tty
-    node_domain=$(echo "$node_domain" | sed 's|https://||g' | sed 's|http://||g' | tr -d '/')
-    
-    read -r -p "  Enter Email [admin@example.com]: " email < /dev/tty
-    email=${email:-admin@example.com}
-    
-    command -v openssl &>/dev/null && secret=$(openssl rand -hex 32) || \
-        secret=$(head -c 64 /dev/urandom | sha256sum | cut -d' ' -f1)
+    # Only ask for input if not quick reinstall
+    if [[ -z "$master_domain" ]]; then
+        log_info "Master Configuration"
+        read -r -p "  Enter Master Domain: " master_domain < /dev/tty
+        master_domain=$(echo "$master_domain" | sed 's|https://||g' | sed 's|http://||g' | tr -d '/')
+        
+        log_info "Node Configuration"
+        read -r -p "  Enter Node Domain: " node_domain < /dev/tty
+        node_domain=$(echo "$node_domain" | sed 's|https://||g' | sed 's|http://||g' | tr -d '/')
+        
+        read -r -p "  Enter Email [admin@example.com]: " email < /dev/tty
+        email=${email:-admin@example.com}
+        
+        command -v openssl &>/dev/null && secret=$(openssl rand -hex 32) || \
+            secret=$(head -c 64 /dev/urandom | sha256sum | cut -d' ' -f1)
+    fi
     
     echo ""
     log_info "Summary:"
@@ -1308,16 +1551,409 @@ install_both() {
     echo ""
     confirm "Proceed?" "y" || exit 0
     
+    # Stop existing containers first
+    log_info "Stopping existing containers..."
+    [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down 2>/dev/null || true
+    [[ -d "$MASTER_INSTALL_DIR" ]] && cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
+    [[ -d "$NODE_INSTALL_DIR" ]] && cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true
+    
     check_ports_avail 80 443 53
     create_docker_networks
     
-    domain="$master_domain"
-    INSTALL_MODE="master"
-    install_master
+    # Generate path prefix for hidden API
+    local path_prefix=$(echo -n "${SALT}:${secret}" | sha256sum | cut -c1-16)
     
-    domain="$node_domain"
-    INSTALL_MODE="node"
-    install_node
+    # Generate UUID and password for proxies
+    local vless_uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-/')
+    local hy2_password=$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | sha256sum | cut -c1-32)
+    
+    #=========================================================================
+    # STEP 1: Install Master (without gateway)
+    #=========================================================================
+    log_step "Installing Master..."
+    mkdir -p "$MASTER_INSTALL_DIR"
+    cp -r "${SCRIPT_DIR}/master/"* "$MASTER_INSTALL_DIR/"
+    
+    cat > "$MASTER_INSTALL_DIR/docker-compose.yml" << 'EOF'
+services:
+  app:
+    build: .
+    container_name: sui-master
+    restart: unless-stopped
+    expose: ["5000"]
+    environment:
+      - CLUSTER_SECRET=${CLUSTER_SECRET}
+      - DATA_DIR=/data
+    volumes: [app-data:/data]
+    networks: [sui-master-net]
+volumes:
+  app-data:
+networks:
+  sui-master-net:
+    external: true
+EOF
+    
+    cat > "$MASTER_INSTALL_DIR/.env" << EOF
+CLUSTER_SECRET=${secret}
+MASTER_DOMAIN=${master_domain}
+ACME_EMAIL=${email}
+EOF
+
+    cd "$MASTER_INSTALL_DIR"
+    docker compose up -d --build
+    echo -e "  ${CHECK} Master container started"
+    
+    #=========================================================================
+    # STEP 2: Install Node (sing-box as SNI router on 443)
+    #=========================================================================
+    log_step "Installing Node with SNI routing..."
+    mkdir -p "$NODE_INSTALL_DIR/config/singbox" "$NODE_INSTALL_DIR/config/adguard/conf"
+    cp -r "${SCRIPT_DIR}/node/"* "$NODE_INSTALL_DIR/"
+    
+    # Node docker-compose:
+    # - sing-box owns 80/443 on host (VLESS + ACME HTTP-01)
+    # - Caddy internal only (no host port binding)
+    cat > "$NODE_INSTALL_DIR/docker-compose.yml" << 'EOF'
+services:
+  singbox:
+    image: ghcr.io/sagernet/sing-box:latest
+    container_name: sui-singbox
+    restart: unless-stopped
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "50000-60000:50000-60000/udp"
+    volumes:
+      - ./config/singbox:/etc/sing-box
+    command: ["run", "-c", "/etc/sing-box/config.json"]
+    networks:
+      - sui-node-net
+      - sui-master-net
+    cap_add: [NET_ADMIN]
+    depends_on:
+      - caddy
+    
+  caddy:
+    image: caddy:2-alpine
+    container_name: sui-caddy
+    restart: unless-stopped
+    expose: ["80"]
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./config/caddy/site:/usr/share/caddy:ro
+      - ./config/caddy/logs:/var/log/caddy
+    networks:
+      - sui-node-net
+      - sui-master-net
+    
+  agent:
+    build: .
+    container_name: sui-agent
+    restart: unless-stopped
+    expose: ["5001"]
+    environment:
+      - CLUSTER_SECRET=${CLUSTER_SECRET}
+      - NODE_DOMAIN=${NODE_DOMAIN}
+      - CONFIG_DIR=/config
+    volumes:
+      - ./config:/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [sui-node-net]
+    security_opt: [no-new-privileges:true]
+    
+  adguard:
+    image: adguard/adguardhome:latest
+    container_name: sui-adguard
+    restart: unless-stopped
+    volumes:
+      - ./config/adguard/work:/opt/adguardhome/work
+      - ./config/adguard/conf:/opt/adguardhome/conf
+    networks: [sui-node-net]
+    ports: ["53:53/tcp", "53:53/udp"]
+    cap_add: [NET_BIND_SERVICE, CHOWN, SETUID, SETGID]
+
+networks:
+  sui-node-net:
+    external: true
+  sui-master-net:
+    external: true
+EOF
+    
+    # sing-box config: Port 443 Native with fallback to Caddy
+    # - Port 443: VLESS traffic -> sing-box handles directly
+    # - Port 443: non-VLESS (browser) -> fallback to Caddy:80 (internal)
+    # - Port 80: ACME HTTP-01 challenge (sing-box auto-handles)
+    cat > "$NODE_INSTALL_DIR/config/singbox/config.json" << SBEOF
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "vless",
+      "tag": "vless-in",
+      "listen": "::",
+      "listen_port": 443,
+      "users": [
+        {
+          "uuid": "${vless_uuid}",
+          "flow": "xtls-rprx-vision"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "${node_domain}",
+        "acme": {
+          "domain": ["${node_domain}", "${master_domain}"],
+          "email": "${email}",
+          "provider": "letsencrypt",
+          "data_directory": "/etc/sing-box/acme"
+        }
+      },
+      "fallback": {
+        "server": "sui-caddy",
+        "server_port": 80
+      },
+      "fallback_for_alpn": {
+        "h2": {
+          "server": "sui-caddy",
+          "server_port": 80
+        }
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hy2-in",
+      "listen": "::",
+      "listen_port": 50000,
+      "users": [
+        {
+          "password": "${hy2_password}"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "${node_domain}",
+        "acme": {
+          "domain": ["${node_domain}"],
+          "email": "${email}",
+          "provider": "letsencrypt",
+          "data_directory": "/etc/sing-box/acme"
+        }
+      },
+      "up_mbps": 100,
+      "down_mbps": 100
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [],
+    "final": "direct"
+  }
+}
+SBEOF
+    
+    mkdir -p "$NODE_INSTALL_DIR/config/singbox/acme"
+    mkdir -p "$NODE_INSTALL_DIR/config/caddy/site"
+    mkdir -p "$NODE_INSTALL_DIR/config/caddy/logs"
+    
+    # Generate random password for Master panel basicauth
+    local panel_user="admin"
+    local panel_pass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
+    # Generate bcrypt hash using docker (caddy image has caddy hash-password)
+    local panel_hash=$(docker run --rm caddy:2-alpine caddy hash-password --plaintext "${panel_pass}" 2>/dev/null || echo "")
+    
+    generate_adguard_config
+    
+    cat > "$NODE_INSTALL_DIR/.env" << EOF
+CLUSTER_SECRET=${secret}
+NODE_DOMAIN=${node_domain}
+MASTER_DOMAIN=${master_domain}
+ACME_EMAIL=${email}
+PATH_PREFIX=${path_prefix}
+VLESS_UUID=${vless_uuid}
+VLESS_PORT=443
+HY2_PASSWORD=${hy2_password}
+HY2_PORT_START=50000
+HY2_PORT_END=60000
+PANEL_USER=${panel_user}
+PANEL_PASS=${panel_pass}
+EOF
+
+    # Caddyfile: Internal HTTP server (receives fallback from sing-box)
+    # - Port 80: routes by Host header to Master or Node services
+    # - No external port binding (sing-box owns 80/443 on host)
+    # - Master panel protected by basicauth
+    if [[ -n "$panel_hash" ]]; then
+        cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
+{
+    # No auto HTTPS - sing-box handles TLS on 443
+    auto_https off
+}
+
+# Internal fallback handler (receives decrypted traffic from sing-box)
+:80 {
+    @master host ${master_domain}
+    handle @master {
+        # Basic authentication for Master panel
+        basicauth {
+            ${panel_user} ${panel_hash}
+        }
+        reverse_proxy sui-master:5000
+    }
+    
+    @node host ${node_domain}
+    handle @node {
+        # Hidden API path for agent
+        handle /${path_prefix}/api/v1/* {
+            reverse_proxy sui-agent:5001
+        }
+        
+        # AdGuard Home Web UI
+        handle /adguard/* {
+            uri strip_prefix /adguard
+            reverse_proxy sui-adguard:3000
+        }
+        
+        # Health check
+        handle /health {
+            reverse_proxy sui-agent:5001
+        }
+        
+        # Default camouflage page
+        handle {
+            root * /usr/share/caddy
+            file_server
+            try_files {path} /index.html
+        }
+    }
+    
+    # Default fallback
+    handle {
+        respond "Not Found" 404
+    }
+    
+    header {
+        -Server
+        X-Content-Type-Options "nosniff"
+    }
+    
+    log {
+        output file /var/log/caddy/access.log
+        level ERROR
+    }
+}
+CADDYEOF
+    else
+        # Fallback without basicauth if hash generation failed
+        log_warn "Could not generate bcrypt hash, Master panel will not have password protection"
+        cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
+{
+    # No auto HTTPS - sing-box handles TLS on 443
+    auto_https off
+}
+
+# Internal fallback handler (receives decrypted traffic from sing-box)
+:80 {
+    @master host ${master_domain}
+    handle @master {
+        reverse_proxy sui-master:5000
+    }
+    
+    @node host ${node_domain}
+    handle @node {
+        # Hidden API path for agent
+        handle /${path_prefix}/api/v1/* {
+            reverse_proxy sui-agent:5001
+        }
+        
+        # AdGuard Home Web UI
+        handle /adguard/* {
+            uri strip_prefix /adguard
+            reverse_proxy sui-adguard:3000
+        }
+        
+        # Health check
+        handle /health {
+            reverse_proxy sui-agent:5001
+        }
+        
+        # Default camouflage page
+        handle {
+            root * /usr/share/caddy
+            file_server
+            try_files {path} /index.html
+        }
+    }
+    
+    # Default fallback
+    handle {
+        respond "Not Found" 404
+    }
+    
+    header {
+        -Server
+        X-Content-Type-Options "nosniff"
+    }
+    
+    log {
+        output file /var/log/caddy/access.log
+        level ERROR
+    }
+}
+CADDYEOF
+    fi
+
+    # Create camouflage site
+    cat > "$NODE_INSTALL_DIR/config/caddy/site/index.html" << 'SITEEOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 20px; }
+        p { color: #666; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome</h1>
+        <p>This is a personal website.</p>
+    </div>
+</body>
+</html>
+SITEEOF
+
+    # Start Node containers (includes Caddy internally)
+    cd "$NODE_INSTALL_DIR"
+    docker compose up -d --build
+    echo -e "  ${CHECK} Node containers started (sing-box + Caddy + Agent + AdGuard)"
+    
+    # Wait for ACME certificates
+    log_info "Waiting for TLS certificates (this may take 1-2 minutes)..."
+    log_warn "sing-box will automatically obtain certificates via ACME HTTP-01..."
+    sleep 15
+    
+    #=========================================================================
+    # STEP 3: Final setup
+    #=========================================================================
+    # Wait for containers to be healthy
+    log_info "Waiting for all containers to be ready..."
+    sleep 3
+    
+    # Generate proxy links
+    local vless_link="vless://${vless_uuid}@${node_domain}:443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${node_domain}&alpn=h2,http/1.1&type=tcp#${node_domain}-VLESS"
+    local hy2_link="hysteria2://${hy2_password}@${node_domain}:50000?sni=${node_domain}&alpn=h3#${node_domain}-Hysteria2"
     
     echo ""
     log_success "Both Master and Node installed successfully!"
@@ -1328,20 +1964,45 @@ install_both() {
     echo -e "${MAGENTA}║${NC}  ${YELLOW}${secret}${NC}  ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
+    if [[ -n "$panel_hash" ]]; then
+        echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║${NC}  ${BOLD}MASTER PANEL LOGIN (Save this!)${NC}                              ${CYAN}║${NC}"
+        echo -e "${CYAN}╠════════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${CYAN}║${NC}  URL:      ${YELLOW}https://${master_domain}${NC}"
+        echo -e "${CYAN}║${NC}  Username: ${YELLOW}${panel_user}${NC}"
+        echo -e "${CYAN}║${NC}  Password: ${YELLOW}${panel_pass}${NC}"
+        echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+    fi
     echo -e "  ${ARROW} Master Panel: ${CYAN}https://${master_domain}${NC}"
     echo -e "  ${ARROW} Node URL:     ${CYAN}https://${node_domain}${NC}"
     echo -e "  ${ARROW} AdGuard Home: ${CYAN}https://${node_domain}/adguard/${NC}"
     echo ""
+    echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${MAGENTA}║${NC}  ${BOLD}PROXY CONFIGURATIONS${NC}                                         ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${MAGENTA}║${NC}  ${CYAN}VLESS + XTLS-Vision + TLS (Port 443)${NC}                         ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  UUID: ${YELLOW}${vless_uuid}${NC}              ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${MAGENTA}║${NC}  ${CYAN}Hysteria2 (Port 50000-60000 UDP)${NC}                             ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  Password: ${YELLOW}${hy2_password}${NC}                        ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${BOLD}Share Links (copy to client):${NC}"
+    echo -e "${GREEN}VLESS:${NC}"
+    echo -e "${vless_link}"
+    echo ""
+    echo -e "${GREEN}Hysteria2:${NC}"
+    echo -e "${hy2_link}"
+    echo ""
     
     # Auto-connect Node to Master
     log_info "Auto-connecting Node to Master..."
-    sleep 3  # Wait for services to be ready
+    sleep 2
     
     local node_name=$(echo "$node_domain" | cut -d. -f1 | tr '[:lower:]' '[:upper:]')
-    local nodes_file="$MASTER_INSTALL_DIR/../master-data/nodes.json"
     local node_id=$(echo -n "$node_domain" | md5sum | cut -c1-8)
     
-    # Create nodes.json in the Docker volume
     docker exec sui-master sh -c "mkdir -p /data && cat > /data/nodes.json << NODEEOF
 {
   \"${node_id}\": {
@@ -1360,7 +2021,12 @@ NODEEOF"
         log_warn "Auto-connect failed. Please add node manually in Master panel."
     fi
     echo ""
+    
+    # Offer firewall configuration
+    configure_firewall_prompt
 }
+
+
 
 #=============================================================================
 # MAIN
