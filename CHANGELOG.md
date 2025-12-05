@@ -2,6 +2,15 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.9] - 2025-12-06
+
+### Fixed
+- Added Docker startup wait loop after installation
+- Script now waits up to 30 seconds for Docker daemon to be ready
+- Better error message if Docker fails to start
+
+---
+
 ## [1.9.8] - 2025-12-06
 
 ### Fixed

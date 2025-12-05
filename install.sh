@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.8"
+readonly VERSION="1.9.9"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -193,6 +193,18 @@ check_dependencies() {
             log_info "Installing Docker..."
             curl -fsSL https://get.docker.com | sh
             systemctl enable docker && systemctl start docker
+            # Wait for Docker to be ready
+            log_info "Waiting for Docker to start..."
+            local retries=30
+            while ! docker info &>/dev/null && [[ $retries -gt 0 ]]; do
+                sleep 1
+                ((retries--))
+            done
+            if ! docker info &>/dev/null; then
+                log_error "Docker failed to start. Please run: systemctl start docker"
+                exit 1
+            fi
+            echo -e "  ${CHECK} Docker is ready"
         fi
     fi
 }
