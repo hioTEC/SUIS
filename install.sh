@@ -600,13 +600,30 @@ install_master() {
     
     if [[ -d "$MASTER_INSTALL_DIR" ]]; then
         log_warn "Existing Master installation detected!"
+        # Load existing settings
+        local existing_domain=$(grep '^MASTER_DOMAIN=' "$MASTER_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+        local existing_email=$(grep '^ACME_EMAIL=' "$MASTER_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+        local existing_secret=$(grep '^CLUSTER_SECRET=' "$MASTER_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
         echo ""
-        echo "    1) Overwrite (update domain/settings)"
-        echo "    2) Cancel"
-        read -r -p "  Select [1-2]: " choice < /dev/tty
+        echo "    1) Quick reinstall (keep domain: ${existing_domain})"
+        echo "    2) Overwrite (update domain/settings)"
+        echo "    3) Cancel"
+        read -r -p "  Select [1-3]: " choice < /dev/tty
         case $choice in
-            1) log_info "Stopping existing containers..."; cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
-               [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down 2>/dev/null || true ;;
+            1) 
+                log_info "Quick reinstall with existing settings..."
+                domain="${existing_domain}"
+                email="${existing_email}"
+                secret="${existing_secret}"
+                log_info "Stopping existing containers..."
+                cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
+                [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down 2>/dev/null || true
+                ;;
+            2) 
+                log_info "Stopping existing containers..."
+                cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
+                [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down 2>/dev/null || true
+                ;;
             *) log_info "Cancelled"; exit 0 ;;
         esac
     fi
@@ -688,12 +705,28 @@ install_node() {
     
     if [[ -d "$NODE_INSTALL_DIR" ]]; then
         log_warn "Existing Node installation detected!"
+        # Load existing settings
+        local existing_domain=$(grep '^NODE_DOMAIN=' "$NODE_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+        local existing_email=$(grep '^ACME_EMAIL=' "$NODE_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
+        local existing_secret=$(grep '^CLUSTER_SECRET=' "$NODE_INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2)
         echo ""
-        echo "    1) Overwrite (update domain/settings)"
-        echo "    2) Cancel"
-        read -r -p "  Select [1-2]: " choice < /dev/tty
+        echo "    1) Quick reinstall (keep domain: ${existing_domain})"
+        echo "    2) Overwrite (update domain/settings)"
+        echo "    3) Cancel"
+        read -r -p "  Select [1-3]: " choice < /dev/tty
         case $choice in
-            1) log_info "Stopping existing containers..."; cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true ;;
+            1) 
+                log_info "Quick reinstall with existing settings..."
+                domain="${existing_domain}"
+                email="${existing_email}"
+                secret="${existing_secret}"
+                log_info "Stopping existing containers..."
+                cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true
+                ;;
+            2) 
+                log_info "Stopping existing containers..."
+                cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true
+                ;;
             *) log_info "Cancelled"; exit 0 ;;
         esac
     fi
@@ -721,7 +754,7 @@ services:
       - "50000-60000:50000-60000/udp"  # Hysteria2 port hopping
     volumes:
       - ./config/singbox:/etc/sing-box:ro
-      - ./config/acme:/etc/sing-box/acme  # ACME certificates
+      - singbox-acme:/etc/sing-box/acme  # ACME certificates (named volume)
     command: ["run", "-c", "/etc/sing-box/config.json"]
     networks: [sui-node-net]
     cap_add: [NET_ADMIN]
@@ -738,6 +771,8 @@ services:
       - ./config/caddy/logs:/var/log/caddy
     networks: [sui-node-net]
     cap_drop: [ALL]
+    security_opt:
+      - seccomp:unconfined  # Fix for old kernel/libseccomp compatibility
     
   agent:
     build: .
@@ -766,6 +801,9 @@ services:
     ports: ["53:53/tcp", "53:53/udp"]
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE, CHOWN, SETUID, SETGID]
+
+volumes:
+  singbox-acme:  # Named volume for ACME certificates
 
 networks:
   sui-node-net:
