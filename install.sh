@@ -18,7 +18,7 @@ set -e
 #=============================================================================
 # CONSTANTS & COLORS
 #=============================================================================
-readonly VERSION="1.1.0"
+readonly VERSION="1.5.0"
 readonly PROJECT_NAME="SUI Solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
 readonly NODE_INSTALL_DIR="/opt/sui-solo/node"

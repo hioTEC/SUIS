@@ -6,6 +6,7 @@ import re
 import hashlib
 import json
 import time
+import subprocess
 from datetime import datetime
 from collections import defaultdict
 from functools import wraps
@@ -17,7 +18,11 @@ app = Flask(__name__)
 DATA_DIR = os.environ.get('DATA_DIR', '/data')
 CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
+SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 SALT = "SUI_Solo_Secured_2024"
+VERSION = "1.5.0"
+GITHUB_REPO = "https://github.com/pjonix/SUIS"
+GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/main"
 
 # Regex patterns
 DOMAIN_PATTERN = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-\.]{0,253}[a-zA-Z0-9])?$')
@@ -79,20 +84,36 @@ def get_hidden_path(token):
     return hashlib.sha256(f"{SALT}:{token}".encode()).hexdigest()[:16]
 
 
-def load_nodes():
+def load_json(filepath, default=None):
     try:
-        if os.path.exists(NODES_FILE):
-            with open(NODES_FILE, 'r') as f:
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as f:
                 return json.load(f)
     except Exception:
         pass
-    return {}
+    return default if default is not None else {}
+
+
+def save_json(filepath, data):
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def load_nodes():
+    return load_json(NODES_FILE, {})
 
 
 def save_nodes(nodes):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(NODES_FILE, 'w') as f:
-        json.dump(nodes, f, indent=2)
+    save_json(NODES_FILE, nodes)
+
+
+def load_settings():
+    return load_json(SETTINGS_FILE, {'auto_update': False, 'last_update_check': None})
+
+
+def save_settings(settings):
+    save_json(SETTINGS_FILE, settings)
 
 
 def get_node_api_url(node):
@@ -100,23 +121,37 @@ def get_node_api_url(node):
     return f"{protocol}://{node['domain']}/{get_hidden_path(CLUSTER_SECRET)}/api/v1"
 
 
-def call_node_api(node, endpoint, method='GET', data=None):
+def call_node_api(node, endpoint, method='GET', data=None, timeout=30):
     url = f"{get_node_api_url(node)}/{endpoint}"
     headers = {'X-SUI-Token': CLUSTER_SECRET}
     try:
         if method == 'GET':
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=headers, timeout=timeout)
         else:
-            resp = requests.post(url, headers=headers, json=data, timeout=30)
+            resp = requests.post(url, headers=headers, json=data, timeout=timeout)
         return resp.json() if resp.ok else {'error': resp.text}
     except Exception as e:
         return {'error': str(e)}
 
 
+def check_for_updates():
+    """Check GitHub for latest version"""
+    try:
+        resp = requests.get(f"{GITHUB_RAW}/master/app.py", timeout=10)
+        if resp.ok:
+            match = re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', resp.text)
+            if match:
+                return {'current': VERSION, 'latest': match.group(1), 'update_available': match.group(1) != VERSION}
+    except Exception:
+        pass
+    return {'current': VERSION, 'latest': VERSION, 'update_available': False}
+
+
 @app.route('/')
 @rate_limit(api_limiter)
 def index():
-    return render_template('index.html', nodes=load_nodes(), secret=CLUSTER_SECRET)
+    settings = load_settings()
+    return render_template('index.html', nodes=load_nodes(), settings=settings, version=VERSION)
 
 
 @app.route('/api/nodes', methods=['GET'])
@@ -222,15 +257,100 @@ def config(node_id, service):
     return jsonify(call_node_api(nodes[node_id], f'config/{service}'))
 
 
-@app.route('/api/secret')
+@app.route('/api/nodes/<node_id>/logs/<service>')
+@rate_limit(api_limiter)
+def node_logs(node_id, service):
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    try:
+        service = sanitize_service(service)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    lines = request.args.get('lines', '100')
+    return jsonify(call_node_api(nodes[node_id], f'logs/{service}?lines={lines}'))
+
+
+@app.route('/api/nodes/<node_id>/update', methods=['POST'])
 @rate_limit(auth_limiter)
-def get_secret():
-    return jsonify({'secret': CLUSTER_SECRET})
+def update_node(node_id):
+    """Trigger update on a specific node"""
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    return jsonify(call_node_api(nodes[node_id], 'update', 'POST', timeout=120))
+
+
+# Settings & Update APIs
+@app.route('/api/settings', methods=['GET', 'POST'])
+@rate_limit(api_limiter)
+def settings():
+    if request.method == 'GET':
+        return jsonify(load_settings())
+    
+    data = request.json or {}
+    current = load_settings()
+    if 'auto_update' in data:
+        current['auto_update'] = bool(data['auto_update'])
+    save_settings(current)
+    return jsonify(current)
+
+
+@app.route('/api/update/check')
+@rate_limit(api_limiter)
+def update_check():
+    """Check for available updates"""
+    result = check_for_updates()
+    settings = load_settings()
+    settings['last_update_check'] = datetime.now().isoformat()
+    save_settings(settings)
+    return jsonify(result)
+
+
+@app.route('/api/update/master', methods=['POST'])
+@rate_limit(auth_limiter)
+def update_master():
+    """Update master to latest version"""
+    try:
+        # Download latest files
+        result = subprocess.run(
+            ['sh', '-c', '''
+                cd /opt/sui-solo/master
+                curl -fsSL https://github.com/pjonix/SUIS/archive/main.zip -o /tmp/update.zip
+                unzip -o /tmp/update.zip -d /tmp/
+                cp /tmp/SUIS-main/master/app.py ./app.py.new
+                cp /tmp/SUIS-main/master/templates/index.html ./templates/index.html.new
+                mv ./app.py.new ./app.py
+                mv ./templates/index.html.new ./templates/index.html
+                rm -rf /tmp/update.zip /tmp/SUIS-main
+            '''],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode == 0:
+            return jsonify({'success': True, 'message': 'Update downloaded. Restart container to apply.'})
+        return jsonify({'success': False, 'error': result.stderr})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/update/all-nodes', methods=['POST'])
+@rate_limit(auth_limiter)
+def update_all_nodes():
+    """Trigger update on all nodes"""
+    nodes = load_nodes()
+    results = {}
+    for node_id, node in nodes.items():
+        results[node_id] = call_node_api(node, 'update', 'POST', timeout=120)
+    return jsonify(results)
 
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'healthy'})
+    return jsonify({'status': 'healthy', 'version': VERSION})
 
 
 if __name__ == '__main__':

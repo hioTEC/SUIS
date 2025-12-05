@@ -183,6 +183,38 @@ def logs(service):
     return jsonify({'service': service, 'logs': out})
 
 
+@app.route(f'/{PATH_PREFIX}/api/v1/update', methods=['POST'])
+@require_auth
+@rate_limit(api_limiter)
+def update():
+    """Update node to latest version"""
+    try:
+        result = subprocess.run(
+            ['sh', '-c', '''
+                cd /opt/sui-solo/node
+                curl -fsSL https://github.com/pjonix/SUIS/archive/main.zip -o /tmp/update.zip
+                unzip -o /tmp/update.zip -d /tmp/
+                cp /tmp/SUIS-main/node/agent.py ./agent.py.new
+                cp /tmp/SUIS-main/node/templates/Caddyfile.template ./templates/Caddyfile.template.new
+                mv ./agent.py.new ./agent.py
+                mv ./templates/Caddyfile.template.new ./templates/Caddyfile.template
+                rm -rf /tmp/update.zip /tmp/SUIS-main
+                docker compose up -d --build
+            '''],
+            capture_output=True, text=True, timeout=120
+        )
+        return jsonify({'success': result.returncode == 0, 'output': result.stdout + result.stderr})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route(f'/{PATH_PREFIX}/api/v1/version')
+@require_auth
+@rate_limit(api_limiter)
+def version():
+    return jsonify({'version': '1.5.0'})
+
+
 @app.route('/health')
 def health():
     return jsonify({'status': 'healthy'})
