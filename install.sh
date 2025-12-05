@@ -761,7 +761,7 @@ services:
     ports:
       - "80:80/tcp"       # ACME HTTP-01 Challenge
       - "443:443/tcp"     # SNI routing (VLESS + Master)
-      - "50000-60000:50000-60000/udp"  # Hysteria2 port hopping
+      - "50200-50300:50200-50300/udp"  # Hysteria2 port hopping
     volumes:
       - ./config/singbox:/etc/sing-box
     command: ["run", "-c", "/etc/sing-box/config.json"]
@@ -829,7 +829,7 @@ services:
     ports:
       - "80:80/tcp"       # ACME HTTP-01 Challenge
       - "443:443/tcp"     # VLESS + TLS
-      - "50000-60000:50000-60000/udp"  # Hysteria2 port hopping
+      - "50200-50300:50200-50300/udp"  # Hysteria2 port hopping
     volumes:
       - ./config/singbox:/etc/sing-box
     command: ["run", "-c", "/etc/sing-box/config.json"]
@@ -942,7 +942,7 @@ EOF
       "type": "hysteria2",
       "tag": "hy2-in",
       "listen": "::",
-      "listen_port": 50000,
+      "listen_port": 50200,
       "users": [
         {
           "password": "${hy2_password}"
@@ -1021,7 +1021,7 @@ SBEOF
       "type": "hysteria2",
       "tag": "hy2-in",
       "listen": "::",
-      "listen_port": 50000,
+      "listen_port": 50200,
       "users": [
         {
           "password": "${hy2_password}"
@@ -1164,8 +1164,8 @@ PATH_PREFIX=${path_prefix}
 VLESS_UUID=${vless_uuid}
 VLESS_PORT=${vless_port}
 HY2_PASSWORD=${hy2_password}
-HY2_PORT_START=50000
-HY2_PORT_END=60000
+HY2_PORT_START=50200
+HY2_PORT_END=50300
 EOF
 
     cd "$NODE_INSTALL_DIR"
@@ -1211,7 +1211,7 @@ EOF
     
     # Generate proxy links for display (use correct port based on mode)
     local vless_link="vless://${vless_uuid}@${domain}:${vless_port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2,http/1.1&type=tcp#${domain}-VLESS"
-    local hy2_link="hysteria2://${hy2_password}@${domain}:50000?sni=${domain}&alpn=h3#${domain}-Hysteria2"
+    local hy2_link="hysteria2://${hy2_password}@${domain}:50200?sni=${domain}&alpn=h3#${domain}-Hysteria2"
     
     echo ""
     log_success "Node Installed!"
@@ -1225,7 +1225,7 @@ EOF
     echo -e "${MAGENTA}║${NC}  ${CYAN}VLESS + XTLS-Vision + TLS (Port ${vless_port})${NC}                         ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}║${NC}  UUID: ${YELLOW}${vless_uuid}${NC}              ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${MAGENTA}║${NC}  ${CYAN}Hysteria2 (Port 50000-60000 UDP)${NC}                             ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${CYAN}Hysteria2 (Port 50200-50300 UDP)${NC}                             ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}║${NC}  Password: ${YELLOW}${hy2_password}${NC}                        ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -1262,7 +1262,7 @@ configure_firewall() {
     
     # Default ports to allow
     local default_ports="22 80 443 53"
-    local default_ranges="50000-60000"
+    local default_ranges="50200-50300"
     
     echo ""
     echo -e "  ${CYAN}Default allowed ports:${NC}"
@@ -1270,7 +1270,7 @@ configure_firewall() {
     echo -e "    80         - HTTP (ACME Challenge)"
     echo -e "    443        - HTTPS (VLESS / Master Panel)"
     echo -e "    53         - DNS (AdGuard)"
-    echo -e "    50000-60000- Hysteria2 UDP (port hopping)"
+    echo -e "    50200-50300- Hysteria2 UDP (port hopping)"
     echo ""
     echo -e "  ${YELLOW}Ports that will be BLOCKED:${NC}"
     echo -e "    3000       - AdGuard Home Web UI (access via hidden path)"
@@ -1474,7 +1474,7 @@ uninstall() {
 #   - Port 80: sing-box ACME HTTP-01 challenge (auto-handled)
 #   - Caddy runs on internal network only (no host port binding)
 #   - Caddy:80 routes by Host header to Master or Node services
-#   - Hysteria2 on UDP 50000-60000
+#   - Hysteria2 on UDP 50200-50300
 #=============================================================================
 install_both() {
     print_banner
@@ -1622,7 +1622,7 @@ services:
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
-      - "50000-60000:50000-60000/udp"
+      - "50200-50300:50200-50300/udp"
     volumes:
       - ./config/singbox:/etc/sing-box
     command: ["run", "-c", "/etc/sing-box/config.json"]
@@ -1726,7 +1726,7 @@ EOF
       "type": "hysteria2",
       "tag": "hy2-in",
       "listen": "::",
-      "listen_port": 50000,
+      "listen_port": 50200,
       "users": [
         {
           "password": "${hy2_password}"
@@ -1780,8 +1780,8 @@ PATH_PREFIX=${path_prefix}
 VLESS_UUID=${vless_uuid}
 VLESS_PORT=443
 HY2_PASSWORD=${hy2_password}
-HY2_PORT_START=50000
-HY2_PORT_END=60000
+HY2_PORT_START=50200
+HY2_PORT_END=50300
 PANEL_USER=${panel_user}
 PANEL_PASS=${panel_pass}
 EOF
@@ -1930,7 +1930,7 @@ CADDYEOF
     
     # Generate proxy links
     local vless_link="vless://${vless_uuid}@${node_domain}:443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${node_domain}&alpn=h2,http/1.1&type=tcp#${node_domain}-VLESS"
-    local hy2_link="hysteria2://${hy2_password}@${node_domain}:50000?sni=${node_domain}&alpn=h3#${node_domain}-Hysteria2"
+    local hy2_link="hysteria2://${hy2_password}@${node_domain}:50200?sni=${node_domain}&alpn=h3#${node_domain}-Hysteria2"
     
     echo ""
     log_success "Both Master and Node installed successfully!"
@@ -1961,7 +1961,7 @@ CADDYEOF
     echo -e "${MAGENTA}║${NC}  ${CYAN}VLESS + XTLS-Vision + TLS (Port 443)${NC}                         ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}║${NC}  UUID: ${YELLOW}${vless_uuid}${NC}              ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${MAGENTA}║${NC}  ${CYAN}Hysteria2 (Port 50000-60000 UDP)${NC}                             ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${CYAN}Hysteria2 (Port 50200-50300 UDP)${NC}                             ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}║${NC}  Password: ${YELLOW}${hy2_password}${NC}                        ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
