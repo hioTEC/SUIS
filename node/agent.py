@@ -15,7 +15,7 @@ app = Flask(__name__)
 CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODE_DOMAIN = os.environ.get('NODE_DOMAIN', '')
 CONFIG_DIR = os.environ.get('CONFIG_DIR', '/config')
-SALT = "SUI_Solo_Secured_2024"
+SALT = "SUI_Solo_Secured_2025"
 
 
 class RateLimiter:
@@ -212,7 +212,7 @@ def update():
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.6.1'})
+    return jsonify({'version': '1.8.0'})
 
 
 @app.route('/health')

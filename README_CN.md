@@ -9,7 +9,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-Required-blue?logo=docker)](https://www.docker.com/)
 [![Python](https://img.shields.io/badge/Python-3.11+-green?logo=python)](https://www.python.org/)
-[![Security](https://img.shields.io/badge/Security-Hardened-green.svg)](#-安全特性)
 
 [English](README.md) | [简体中文](README_CN.md)
 
@@ -25,8 +24,7 @@
 > 如果 DNS 未指向服务器，安装将失败。
 
 ```bash
-# 验证 DNS 是否生效：
-dig +short panel.example.com  # 应返回你的服务器 IP
+dig +short panel.example.com
 dig +short node1.example.com
 ```
 
@@ -37,148 +35,142 @@ dig +short node1.example.com
 ### 环境要求
 
 - Docker 20.10+ (含 Docker Compose)
-- **Master 和每个 Node 都需要域名** (HTTPS 必需)
-- 端口: 80, 443 (Master 和 Node), 53 (仅 Node)
-- **DNS 已配置并生效**
+- 主控和每个节点都需要独立域名
+- 端口: 80, 443 (主控和节点), 53 (仅节点)
 
-### 安装主控 (Master)
-
-```bash
-# 下载并解压
-curl -L https://github.com/pjonix/SUIS/archive/refs/heads/main.zip -o SUIS.zip
-unzip SUIS.zip
-cd SUIS-main
-
-# 或使用 wget:
-# wget https://github.com/pjonix/SUIS/archive/refs/heads/main.zip
-# unzip main.zip && cd SUIS-main
-
-# 运行安装脚本
-sudo ./install.sh --master
-```
-
-安装时需要输入:
-1. **Master 域名** (如 `panel.example.com`)
-2. **邮箱** 用于 SSL 证书
-
-> 📝 **务必保存安装后显示的 Cluster Secret！**
-
-### 安装节点 (Node)
+### 第一步：安装主控
 
 ```bash
-sudo ./install.sh --node
-# 输入: Cluster Secret、节点域名、邮箱
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --master
 ```
 
-### 在主控添加节点
+> 📝 **务必保存集群密钥** - 安装时只显示一次！
 
-打开 `https://你的主控域名` → 点击 **"+ Add Node"**
+### 第二步：安装节点
+
+在每台节点服务器上执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --node
+```
+
+按提示输入集群密钥。
+
+### 第三步：在主控添加节点
+
+1. 打开 `https://你的主控域名`
+2. 点击 **"+ Add Node"**
+3. 输入节点名称和域名
+4. 点击 "Check" 验证连接
+
+---
+
+## 🖥️ 同一服务器部署主控和节点
+
+可以在同一台服务器上同时运行主控和节点，使用共享 Caddy 网关：
+
+### 方式一：一键安装（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --both
+```
+
+### 方式二：分步安装
+
+```bash
+# 1. 先安装主控
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --master
+
+# 2. 再安装节点 (自动检测主控，使用共享网关)
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --node
+
+# 3. 在主控面板添加这个节点
+```
+
+> ⚠️ 两个域名必须都指向同一服务器 IP
+
+---
+
+## 📖 架构说明
+
+```
+┌─────────────────┐         ┌─────────────────┐
+│      主控       │         │      节点       │
+│   (控制面板)    │◄───────►│   (代理服务)    │
+│                 │  HTTPS  │                 │
+│  - 网页界面     │         │  - Sing-box     │
+│  - 节点管理     │         │  - AdGuard Home │
+│  - 状态监控     │         │  - Caddy        │
+└─────────────────┘         └─────────────────┘
+```
+
+- **主控**: 控制面板，用于管理和监控所有节点
+- **节点**: 实际运行代理服务 (Sing-box) 和 DNS 过滤 (AdGuard Home)
+
+### 访问服务
+
+| 服务 | 地址 |
+|------|------|
+| 主控面板 | `https://panel.example.com` |
+| 节点 AdGuard Home | `https://node.example.com/adguard/` |
+| 节点 API (内部) | `https://node.example.com/{隐藏路径}/api/v1/` |
+
+---
+
+## 🔧 管理命令
+
+```bash
+# 查看状态
+cd /opt/sui-solo/master && docker compose ps
+cd /opt/sui-solo/node && docker compose ps
+
+# 查看日志
+cd /opt/sui-solo/master && docker compose logs -f
+cd /opt/sui-solo/node && docker compose logs -f
+
+# 重启服务
+cd /opt/sui-solo/master && docker compose restart
+cd /opt/sui-solo/node && docker compose restart
+```
+
+### 卸载
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --uninstall
+```
+
+---
+
+## 📁 配置文件位置
+
+```
+/opt/sui-solo/
+├── gateway/                    # 共享 Caddy 网关
+│   ├── docker-compose.yml
+│   └── Caddyfile
+├── master/
+│   ├── .env                    # 主控配置 (含密钥)
+│   └── docker-compose.yml
+└── node/
+    ├── .env                    # 节点配置
+    ├── docker-compose.yml
+    └── config/
+        ├── singbox/config.json # Sing-box 配置
+        └── adguard/            # AdGuard 配置
+```
 
 ---
 
 ## 🔒 安全特性
 
-### 纵深防御
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      安全层级                                │
-├─────────────────────────────────────────────────────────────┤
-│  第1层: HTTPS/TLS          - 全链路加密                      │
-│  第2层: 隐藏 API 路径       - SHA256(SALT:token)[:16]        │
-│  第3层: Token 认证          - X-SUI-Token 请求头             │
-│  第4层: 频率限制            - 每 IP 每分钟 5 次认证尝试       │
-│  第5层: 输入清洗            - 白名单验证                      │
-│  第6层: 命令白名单          - 仅允许特定 docker 命令          │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 频率限制
-
-| 端点类型 | 限制 | 时间窗口 |
-|---------|------|---------|
-| 普通 API | 30 次 | 60 秒 |
-| 敏感操作 | 5 次 | 60 秒 |
-| 触发限制后 | 封禁 | 120 秒 |
-
-### 加盐隐藏路径
-
-```python
-SALT = "SUI_Solo_Secured_2024"
-
-def get_hidden_path(token: str) -> str:
-    combined = f"{SALT}:{token}"
-    return hashlib.sha256(combined.encode()).hexdigest()[:16]
-
-# API: /{16位哈希}/api/v1/status
-```
-
-**设计原理：**
-- **确定性**: 相同 Token = 主控和节点计算出相同路径
-- **防扫描**: 没有 Token 无法推算 URL
-- **纵深防御**: Caddy 仅放行隐藏路径，其他返回伪装页
-
----
-
-## 🏗️ 架构
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    主控 MASTER (仅 HTTPS)                    │
-│  ┌─────────────┐      ┌─────────────┐                       │
-│  │   Caddy     │ ───▶ │  Flask App  │                       │
-│  │  (网关)     │      │  (内部)     │                       │
-│  │  :80/:443   │      │    :5000    │                       │
-│  └─────────────┘      └─────────────┘                       │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                    HTTPS + Token 认证
-                              │
-┌─────────────────────────────────────────────────────────────┐
-│                      节点 NODE (仅 HTTPS)                    │
-│  ┌─────────────┐      ┌─────────────┐                       │
-│  │   Caddy     │ ───▶ │   Agent     │ ───▶ Sing-box        │
-│  │  (网关)     │      │  (隐藏路径) │ ───▶ AdGuard         │
-│  └─────────────┘      └─────────────┘                       │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 📁 项目结构
-
-```
-sui-solo/
-├── install.sh              # 交互式安装脚本
-├── README.md / README_CN.md
-├── LICENSE / .gitignore
-├── master/
-│   ├── docker-compose.yml  # Caddy (网关) + Flask (内部)
-│   ├── app.py              # 频率限制、输入清洗
-│   ├── Dockerfile
-│   └── templates/index.html
-└── node/
-    ├── docker-compose.yml  # 安全加固的容器配置
-    ├── agent.py            # 命令白名单、频率限制
-    ├── Dockerfile
-    └── templates/Caddyfile.template
-```
-
----
-
-## ⚠️ 安全警告
-
-### Docker Socket 访问
-
-> **⚠️ 中等风险**
-
-Agent 容器需要 Docker socket 访问权限来重启服务。已实施的缓解措施：
-
-- ✅ 命令白名单 (仅 `restart`, `inspect`, `logs`)
-- ✅ 容器名白名单 (仅 `sui-*`)
-- ✅ 只读挂载 socket
-- ✅ 移除不必要的 capabilities
-- ✅ `no-new-privileges` 安全选项
+| 层级 | 保护措施 |
+|------|----------|
+| HTTPS | 全链路 TLS 加密 (Caddy) |
+| 隐藏路径 | API 路径 = `SHA256(盐:密钥)[:16]` |
+| Token 认证 | `X-SUI-Token` 请求头验证 |
+| 频率限制 | 每 IP 每分钟 5 次认证尝试 |
+| 输入清洗 | 白名单验证 |
+| 命令白名单 | 仅允许特定 docker 命令 |
 
 ---
 
@@ -186,49 +178,18 @@ Agent 容器需要 Docker socket 访问权限来重启服务。已实施的缓�
 
 | 问题 | 解决方案 |
 |------|----------|
-| SSL 证书错误 | 验证 DNS: `dig +short 你的域名` |
-| "Rate limit exceeded" | 等待 60-120 秒 |
-| Token 错误 | 检查两端 `.env` 中的密钥是否一致 |
-| 端口被占用 | `sudo lsof -i :80` 找出占用进程 |
-
-### 查看日志
-
-```bash
-# 主控日志
-cd /opt/sui-solo/master && docker compose logs -f
-
-# 节点日志
-cd /opt/sui-solo/node && docker compose logs -f
-
-# 检查认证失败
-docker logs sui-agent 2>&1 | grep -i "auth\|rate"
-```
-
----
-
-## 📡 API 参考
-
-### 认证
-
-所有 API 请求需要:
-- 路径: `/{PATH_PREFIX}/api/v1/...`
-- 请求头: `X-SUI-Token: <CLUSTER_SECRET>`
-
-### 端点
-
-| 端点 | 方法 | 频率限制 |
-|------|------|---------|
-| `/status` | GET | 30/分钟 |
-| `/services` | GET | 30/分钟 |
-| `/restart/<service>` | POST | 5/分钟 |
-| `/config/<service>` | GET/POST | 5/分钟 (POST) |
-| `/logs/<service>` | GET | 30/分钟 |
+| SSL 证书错误 | 检查 DNS: `dig +short 你的域名` |
+| 频率限制 | 等待 60-120 秒 |
+| Token 错误 | 检查主控和节点的 `.env` 中密钥是否一致 |
+| 端口占用 | `sudo lsof -i :80` 或 `sudo ss -tlnp \| grep :80` |
+| 节点离线 | 检查节点服务: `cd /opt/sui-solo/node && docker compose ps` |
+| 页面空白 | 重建容器: `docker compose down && docker compose up -d --build` |
 
 ---
 
 ## ⚠️ 免责声明
 
-本项目仅供**教育和技术研究目的**。用户必须遵守当地法律法规。作者不对任何滥用行为负责。
+本项目仅供**教育和技术研究目的**。用户必须遵守当地法律法规。
 
 ---
 

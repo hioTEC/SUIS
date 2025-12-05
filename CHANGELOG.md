@@ -2,7 +2,45 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
-## [1.6.1] - 2024-12-06
+## [1.8.0] - 2025-12-06
+
+### Added
+- **Multi-language Support**: Installation script now supports English and Chinese
+- **Language Selector**: Choose language at the start of installation
+- **UI Language Toggle**: Dashboard now has EN/中文 switch button
+- **i18n System**: All UI text can be switched between languages
+
+### Changed
+- Separated README.md (English) and README_CN.md (Chinese)
+- Removed `--reinstall` command (use `--uninstall` + reinstall instead)
+- Simplified CLI options: `--master`, `--node`, `--both`, `--uninstall`, `--help`
+
+### Removed
+- Removed redundant `--reinstall` functionality
+
+---
+
+## [1.7.0] - 2025-12-06
+
+### Added
+- **Shared Gateway Architecture**: Master and Node now share a single Caddy instance
+- **`--both` Command**: One-click installation of Master + Node on same server
+- **Smart Port Detection**: Automatically detects if ports are used by SUI Solo containers
+- **Docker Network Isolation**: Separate networks for Master and Node services
+
+### Changed
+- Refactored installation to use shared `/opt/sui-solo/gateway` for Caddy
+- Master and Node docker-compose files no longer include Caddy
+- Improved uninstall to properly handle shared gateway cleanup
+- Gateway Caddyfile auto-regenerates when components are added/removed
+
+### Fixed
+- Fixed port conflict when installing Node after Master on same server
+- Fixed "Kill process" option failing for SUI Solo's own containers
+
+---
+
+## [1.6.1] - 2025-12-06
 
 ### Fixed
 - Fixed overwrite installation not updating Caddy config (domain stuck on old value)
@@ -11,7 +49,7 @@ All notable changes to SUI Solo will be documented in this file.
 
 ---
 
-## [1.6.0] - 2024-12-05
+## [1.6.0] - 2025-12-05
 
 ### Changed
 - Version bump to 1.6.0
@@ -19,7 +57,7 @@ All notable changes to SUI Solo will be documented in this file.
 
 ---
 
-## [1.5.0] - 2024-12-05
+## [1.5.0] - 2025-12-05
 
 ### Added
 - **Update System**: Master can now update itself and all nodes remotely
@@ -47,7 +85,7 @@ All notable changes to SUI Solo will be documented in this file.
 
 ---
 
-## [1.1.0] - 2024-12-05
+## [1.1.0] - 2025-12-05
 
 ### Added
 - **One-line Installation**: `curl | bash` support for easy deployment
@@ -71,7 +109,7 @@ All notable changes to SUI Solo will be documented in this file.
 
 ---
 
-## [1.0.0] - 2024-12-04
+## [1.0.0] - 2025-12-04
 
 ### Added
 - Initial release

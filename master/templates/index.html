@@ -75,24 +75,25 @@
 <body>
     <div class="container">
         <header>
-            <h1>🚀 SUI Solo Control Panel <span class="https-badge">v{{ version }}</span></h1>
-            <div style="display: flex; gap: 0.5rem;">
-                <button class="btn btn-outline" onclick="showSettingsModal()">⚙️ Settings</button>
-                <button class="btn btn-primary" onclick="showAddModal()">+ Add Node</button>
+            <h1>🚀 SUI Solo <span class="https-badge">v{{ version }}</span></h1>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button class="btn btn-sm btn-outline" onclick="toggleLang()" id="langBtn">中文</button>
+                <button class="btn btn-outline" onclick="showSettingsModal()">⚙️ <span data-i18n="settings">Settings</span></button>
+                <button class="btn btn-primary" onclick="showAddModal()">+ <span data-i18n="addNode">Add Node</span></button>
             </div>
         </header>
         
         <div class="card">
             <div class="card-header">
-                <h2>Nodes ({{ nodes|length }})</h2>
-                <button class="btn btn-outline btn-sm" onclick="refreshAll()">↻ Refresh All</button>
+                <h2><span data-i18n="nodes">Nodes</span> ({{ nodes|length }})</h2>
+                <button class="btn btn-outline btn-sm" onclick="refreshAll()">↻ <span data-i18n="refreshAll">Refresh All</span></button>
             </div>
             
             <div class="node-grid" id="nodeGrid">
                 {% if not nodes %}
                 <div class="empty-state" style="grid-column: 1/-1;">
-                    <h3>No nodes configured</h3>
-                    <p>Click "Add Node" to connect your first proxy node.</p>
+                    <h3 data-i18n="noNodes">No nodes configured</h3>
+                    <p data-i18n="noNodesHint">Click "Add Node" to connect your first proxy node.</p>
                 </div>
                 {% endif %}
                 
@@ -133,11 +134,11 @@
                     </div>
                     
                     <div class="actions">
-                        <button class="btn btn-primary btn-sm" onclick="checkStatus('{{ id }}')">Check Status</button>
-                        <button class="btn btn-outline btn-sm" onclick="showConfigModal('{{ id }}', 'singbox')">Sing-box Config</button>
-                        <button class="btn btn-outline btn-sm" onclick="showLogsModal('{{ id }}')">Logs</button>
-                        <button class="btn btn-warning btn-sm" onclick="updateNode('{{ id }}')">Update</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteNode('{{ id }}')">Delete</button>
+                        <button class="btn btn-primary btn-sm" onclick="checkStatus('{{ id }}')" data-i18n="checkStatus">Check Status</button>
+                        <button class="btn btn-outline btn-sm" onclick="showConfigModal('{{ id }}', 'singbox')"><span data-i18n="config">Config</span></button>
+                        <button class="btn btn-outline btn-sm" onclick="showLogsModal('{{ id }}')" data-i18n="logs">Logs</button>
+                        <button class="btn btn-warning btn-sm" onclick="updateNode('{{ id }}')" data-i18n="update">Update</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteNode('{{ id }}')" data-i18n="delete">Delete</button>
                     </div>
                     
                     <div class="node-info">
@@ -154,21 +155,21 @@
     <div class="modal" id="addModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Add New Node</h3>
+                <h3 data-i18n="addNewNode">Add New Node</h3>
                 <button class="modal-close" onclick="hideModal('addModal')">&times;</button>
             </div>
             <form id="addForm">
                 <div class="form-group">
-                    <label>Node Name</label>
+                    <label data-i18n="nodeName">Node Name</label>
                     <input type="text" name="name" placeholder="e.g., Tokyo-01" required>
                 </div>
                 <div class="form-group">
-                    <label>Domain</label>
+                    <label data-i18n="domain">Domain</label>
                     <input type="text" name="domain" placeholder="e.g., node1.example.com" required>
                 </div>
                 <div class="form-actions">
-                    <button type="button" class="btn btn-outline" onclick="hideModal('addModal')">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Node</button>
+                    <button type="button" class="btn btn-outline" onclick="hideModal('addModal')" data-i18n="cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" data-i18n="addNode">Add Node</button>
                 </div>
             </form>
         </div>
@@ -509,8 +510,48 @@
             }
         }
 
+        // i18n
+        const i18n = {
+            en: {
+                settings: 'Settings', addNode: 'Add Node', nodes: 'Nodes', refreshAll: 'Refresh All',
+                noNodes: 'No nodes configured', noNodesHint: 'Click "Add Node" to connect your first proxy node.',
+                checkStatus: 'Check Status', config: 'Config', logs: 'Logs', update: 'Update', delete: 'Delete',
+                added: 'Added', lastCheck: 'Last check', addNewNode: 'Add New Node', nodeName: 'Node Name',
+                domain: 'Domain', cancel: 'Cancel', save: 'Save', restart: 'Restart Service', saveRestart: 'Save & Restart',
+                configContent: 'Config Content', autoUpdate: 'Enable Auto Update Check', autoUpdateHint: 'Automatically check for updates periodically',
+                manualUpdate: 'Manual Update', checkUpdates: 'Check for Updates', updateMaster: 'Update Master',
+                updateAllNodes: 'Update All Nodes', currentVersion: 'Current Version', lastCheckTime: 'Last Check'
+            },
+            zh: {
+                settings: '设置', addNode: '添加节点', nodes: '节点', refreshAll: '刷新全部',
+                noNodes: '暂无节点', noNodesHint: '点击"添加节点"连接你的第一个代理节点。',
+                checkStatus: '检查状态', config: '配置', logs: '日志', update: '更新', delete: '删除',
+                added: '添加于', lastCheck: '上次检查', addNewNode: '添加新节点', nodeName: '节点名称',
+                domain: '域名', cancel: '取消', save: '保存', restart: '重启服务', saveRestart: '保存并重启',
+                configContent: '配置内容', autoUpdate: '启用自动更新检查', autoUpdateHint: '定期自动检查更新',
+                manualUpdate: '手动更新', checkUpdates: '检查更新', updateMaster: '更新主控',
+                updateAllNodes: '更新所有节点', currentVersion: '当前版本', lastCheckTime: '上次检查'
+            }
+        };
+        let currentLang = localStorage.getItem('sui-lang') || 'en';
+
+        function toggleLang() {
+            currentLang = currentLang === 'en' ? 'zh' : 'en';
+            localStorage.setItem('sui-lang', currentLang);
+            applyLang();
+        }
+
+        function applyLang() {
+            document.getElementById('langBtn').textContent = currentLang === 'en' ? '中文' : 'EN';
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (i18n[currentLang][key]) el.textContent = i18n[currentLang][key];
+            });
+        }
+
         // Auto-refresh status on page load
         document.addEventListener('DOMContentLoaded', () => {
+            applyLang();
             const nodes = document.querySelectorAll('.node-card');
             nodes.forEach(node => {
                 const id = node.id.replace('node-', '');
