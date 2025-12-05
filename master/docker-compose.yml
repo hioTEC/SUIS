@@ -1,0 +1,42 @@
+services:
+  gateway:
+    image: caddy:2-alpine
+    container_name: sui-master-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+    networks:
+      - sui-net
+    depends_on:
+      - app
+
+  app:
+    build: .
+    container_name: sui-master
+    restart: unless-stopped
+    expose:
+      - "5000"
+    environment:
+      - CLUSTER_SECRET=${CLUSTER_SECRET}
+      - DATA_DIR=/data
+    volumes:
+      - app-data:/data
+    networks:
+      - sui-net
+
+volumes:
+  caddy-data:
+  caddy-config:
+  caddy-logs:
+  app-data:
+
+networks:
+  sui-net:
+    driver: bridge
