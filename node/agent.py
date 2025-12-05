@@ -375,6 +375,73 @@ def version():
     return jsonify({'version': '1.9.22'})
 
 
+@app.route(f'/{PATH_PREFIX}/api/v1/diagnostics')
+@require_auth
+@rate_limit(api_limiter)
+def diagnostics():
+    """Run diagnostics and return system health status"""
+    issues = []
+    warnings = []
+    
+    # Check 1: Docker CLI availability
+    try:
+        result = subprocess.run(['docker', '--version'], capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            issues.append('Docker CLI not available in agent container')
+    except Exception as e:
+        issues.append(f'Docker CLI check failed: {str(e)}')
+    
+    # Check 2: Docker socket access
+    try:
+        result = subprocess.run(['docker', 'ps'], capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            issues.append('Cannot access Docker socket')
+    except Exception as e:
+        issues.append(f'Docker socket check failed: {str(e)}')
+    
+    # Check 3: Container status
+    services_status = {}
+    for svc in ['singbox', 'adguard', 'caddy']:
+        ok, out = execute_cmd(f'status_{svc}')
+        status = out.strip() if ok else 'not found'
+        services_status[svc] = status
+        if status == 'not found':
+            warnings.append(f'{svc} container not found')
+        elif status != 'running':
+            warnings.append(f'{svc} container status: {status}')
+    
+    # Check 4: Config files
+    config_files = {
+        'singbox': os.path.join(CONFIG_DIR, 'singbox/config.json'),
+        'adguard': os.path.join(CONFIG_DIR, 'adguard/AdGuardHome.yaml'),
+    }
+    for name, path in config_files.items():
+        if not os.path.exists(path):
+            warnings.append(f'{name} config file missing: {path}')
+    
+    # Check 5: Network connectivity
+    try:
+        result = subprocess.run(['ping', '-c', '1', '-W', '2', '8.8.8.8'], 
+                              capture_output=True, timeout=5)
+        if result.returncode != 0:
+            warnings.append('Network connectivity issue detected')
+    except:
+        pass
+    
+    health_status = 'healthy' if not issues else 'unhealthy'
+    if warnings and not issues:
+        health_status = 'degraded'
+    
+    return jsonify({
+        'status': health_status,
+        'issues': issues,
+        'warnings': warnings,
+        'services': services_status,
+        'docker_cli': 'available' if not any('Docker CLI' in i for i in issues) else 'missing',
+        'timestamp': time.time()
+    })
+
+
 # ============================================================================
 # FIREWALL MANAGEMENT (provides commands for manual configuration)
 # ============================================================================

@@ -4,6 +4,18 @@ All notable changes to SUI Solo will be documented in this file.
 
 ## [1.9.22] - 2025-12-06
 
+### Added
+- **Diagnostic tools**: New diagnostics system for troubleshooting
+  - `diagnose.sh` script for system-wide health checks
+  - Node Agent `/api/v1/diagnostics` endpoint
+  - Checks Docker, iptables, networks, containers, configs
+  - Auto-fix suggestions for common issues
+- **Installation improvements**: Proactive issue detection
+  - Auto-detect and fix iptables/nftables conflicts
+  - Verify Docker networks exist before starting containers
+  - Container health checks after installation
+  - Better error messages with fix suggestions
+
 ### Changed
 - **Firewall management redesigned**: Now provides SSH commands instead of direct control
   - Shows ready-to-use commands for UFW, firewalld, and iptables
@@ -16,6 +28,8 @@ All notable changes to SUI Solo will be documented in this file.
 - **Fixed service status showing "not found"**: Installed docker-ce-cli in agent container
   - Agent can now properly check container status via Docker CLI
   - Services (singbox, adguard) now show correct "running" status
+- **Fixed iptables conflict**: Auto-switch to iptables-legacy on systems using nftables
+- **Fixed missing Docker networks**: Auto-create networks with proper error handling
 
 ---
 

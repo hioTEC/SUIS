@@ -192,6 +192,10 @@ check_dependencies() {
         else
             log_info "Installing Docker..."
             curl -fsSL https://get.docker.com | sh
+            
+            # Fix iptables conflict before starting Docker
+            fix_iptables_conflict
+            
             # Start Docker service (support both systemd and OpenRC)
             if command -v systemctl &>/dev/null; then
                 systemctl enable docker && systemctl start docker
@@ -209,9 +213,31 @@ check_dependencies() {
             done
             if ! docker info &>/dev/null; then
                 log_error "Docker failed to start. Try manually: systemctl start docker OR service docker start"
+                log_warn "If issue persists, try: update-alternatives --set iptables /usr/sbin/iptables-legacy"
                 exit 1
             fi
             echo -e "  ${CHECK} Docker is ready"
+        fi
+    else
+        # Docker already installed, but check for iptables issues
+        if ! docker info &>/dev/null; then
+            log_warn "Docker is installed but not responding, checking iptables..."
+            fix_iptables_conflict
+            
+            # Try to restart Docker
+            if command -v systemctl &>/dev/null; then
+                systemctl restart docker
+            elif command -v rc-service &>/dev/null; then
+                rc-service docker restart
+            elif command -v service &>/dev/null; then
+                service docker restart
+            fi
+            
+            sleep 3
+            if ! docker info &>/dev/null; then
+                log_error "Docker is not responding. Please check: systemctl status docker"
+                exit 1
+            fi
         fi
     fi
 }
@@ -290,10 +316,46 @@ check_master_exists() { [[ -d "$MASTER_INSTALL_DIR" && -f "$MASTER_INSTALL_DIR/.
 check_node_exists() { [[ -d "$NODE_INSTALL_DIR" && -f "$NODE_INSTALL_DIR/.env" ]]; }
 check_gateway_exists() { [[ -d "$GATEWAY_DIR" && -f "$GATEWAY_DIR/docker-compose.yml" ]]; }
 
+fix_iptables_conflict() {
+    # Check for iptables/nftables conflict (common on Debian/Ubuntu)
+    if command -v iptables &>/dev/null && command -v update-alternatives &>/dev/null; then
+        local current_iptables
+        current_iptables=$(update-alternatives --query iptables 2>/dev/null | grep "Value:" | awk '{print $2}')
+        
+        if [[ "$current_iptables" == *"nft"* ]]; then
+            log_warn "Detected nftables mode, switching to iptables-legacy for Docker compatibility..."
+            update-alternatives --set iptables /usr/sbin/iptables-legacy 2>/dev/null || true
+            update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy 2>/dev/null || true
+            log_success "Switched to iptables-legacy"
+        fi
+    fi
+}
+
 create_docker_networks() {
     log_info "Creating Docker networks..."
-    docker network create sui-master-net 2>/dev/null || true
-    docker network create sui-node-net 2>/dev/null || true
+    
+    # Check if networks already exist
+    if docker network inspect sui-master-net &>/dev/null; then
+        log_info "Network sui-master-net already exists"
+    else
+        if docker network create sui-master-net 2>/dev/null; then
+            log_success "Created network: sui-master-net"
+        else
+            log_error "Failed to create network: sui-master-net"
+            exit 1
+        fi
+    fi
+    
+    if docker network inspect sui-node-net &>/dev/null; then
+        log_info "Network sui-node-net already exists"
+    else
+        if docker network create sui-node-net 2>/dev/null; then
+            log_success "Created network: sui-node-net"
+        else
+            log_error "Failed to create network: sui-node-net"
+            exit 1
+        fi
+    fi
 }
 
 setup_shared_gateway() {
@@ -587,6 +649,23 @@ EOF
         exit 1
     fi
     
+    # Wait for containers to be healthy
+    log_info "Waiting for Master containers to be ready..."
+    sleep 3
+    local retries=10
+    while [[ $retries -gt 0 ]]; do
+        if docker ps | grep -q "sui-master.*Up"; then
+            log_success "Master container is running"
+            break
+        fi
+        sleep 2
+        ((retries--))
+    done
+    
+    if [[ $retries -eq 0 ]]; then
+        log_warn "Master container may not be fully ready, check logs: docker logs sui-master"
+    fi
+    
     setup_shared_gateway
     generate_shared_caddyfile
     start_shared_gateway
@@ -739,6 +818,30 @@ EOF
         log_error "Failed to start Node containers"
         docker compose logs --tail=20
         exit 1
+    fi
+    
+    # Wait for containers to be healthy
+    log_info "Waiting for Node containers to be ready..."
+    sleep 3
+    local retries=10
+    while [[ $retries -gt 0 ]]; do
+        local running_count=0
+        docker ps | grep -q "sui-agent.*Up" && ((running_count++))
+        docker ps | grep -q "sui-singbox.*Up" && ((running_count++))
+        docker ps | grep -q "sui-adguard.*Up" && ((running_count++))
+        
+        if [[ $running_count -eq 3 ]]; then
+            log_success "All Node containers are running"
+            break
+        fi
+        sleep 2
+        ((retries--))
+    done
+    
+    if [[ $retries -eq 0 ]]; then
+        log_warn "Some containers may not be fully ready. Check status:"
+        docker ps -a | grep "sui-"
+        log_info "Check logs: docker logs sui-agent / sui-singbox / sui-adguard"
     fi
     
     if [[ "$SHARED_CADDY_MODE" == "true" ]]; then
@@ -1113,6 +1216,16 @@ main() {
     else
         install_node
     fi
+    
+    # Post-installation tips
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}  ${BOLD}Installation Complete!${NC}                                  ${CYAN}║${NC}"
+    echo -e "${CYAN}╠═══════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${CYAN}║${NC}  If you encounter any issues, run diagnostics:          ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  ${YELLOW}curl -fsSL https://raw.githubusercontent.com/hioTEC/SUIS/main/diagnose.sh | bash${NC}  ${CYAN}║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
 }
 
 show_help() {
