@@ -20,7 +20,7 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 SALT = "SUI_Solo_Secured_2025"
-VERSION = "1.9.20"
+VERSION = "1.9.21"
 GITHUB_REPO = "https://github.com/pjonix/SUIS"
 GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/main"
 
@@ -309,6 +309,30 @@ def node_proxies(node_id):
     return jsonify(call_node_api(nodes[node_id], 'proxies'))
 
 
+@app.route('/api/nodes/<node_id>/firewall', methods=['GET'])
+@rate_limit(api_limiter)
+def get_node_firewall(node_id):
+    """Get firewall status from a node"""
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    return jsonify(call_node_api(nodes[node_id], 'firewall'))
+
+
+@app.route('/api/nodes/<node_id>/firewall', methods=['POST'])
+@rate_limit(auth_limiter)
+def set_node_firewall(node_id):
+    """Configure firewall on a node"""
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    return jsonify(call_node_api(nodes[node_id], 'firewall', 'POST', request.json))
+
+
 # Settings & Update APIs
 @app.route('/api/settings', methods=['GET', 'POST'])
 @rate_limit(api_limiter)
@@ -341,46 +365,43 @@ def update_master():
     """Update master to latest version and restart"""
     import shutil
     import threading
+    import zipfile
+    import io
     
     try:
         # Get the directory where app.py is located
         app_dir = os.path.dirname(os.path.abspath(__file__))
         templates_dir = os.path.join(app_dir, 'templates')
         
-        # Download latest
-        result = subprocess.run(
-            ['curl', '-fsSL', 'https://github.com/pjonix/SUIS/archive/main.zip', '-o', '/tmp/update.zip'],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode != 0:
-            return jsonify({'success': False, 'error': f'Download failed: {result.stderr}'})
+        # Download latest using requests (curl not available in container)
+        resp = requests.get('https://github.com/pjonix/SUIS/archive/main.zip', timeout=30)
+        if resp.status_code != 200:
+            return jsonify({'success': False, 'error': f'Download failed: HTTP {resp.status_code}'})
         
-        result = subprocess.run(
-            ['unzip', '-o', '/tmp/update.zip', '-d', '/tmp/'],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode != 0:
-            return jsonify({'success': False, 'error': f'Unzip failed: {result.stderr}'})
+        # Extract zip in memory
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            # Extract to /tmp
+            zf.extractall('/tmp/')
         
         # Backup and copy new files
         for f in ['app.py']:
             src = f'/tmp/SUIS-main/master/{f}'
             dst = os.path.join(app_dir, f)
             if os.path.exists(src):
-                shutil.copy(dst, f'{dst}.bak') if os.path.exists(dst) else None
+                if os.path.exists(dst):
+                    shutil.copy(dst, f'{dst}.bak')
                 shutil.copy(src, dst)
         
         for f in ['index.html']:
             src = f'/tmp/SUIS-main/master/templates/{f}'
             dst = os.path.join(templates_dir, f)
             if os.path.exists(src):
-                shutil.copy(dst, f'{dst}.bak') if os.path.exists(dst) else None
+                if os.path.exists(dst):
+                    shutil.copy(dst, f'{dst}.bak')
                 shutil.copy(src, dst)
         
         # Cleanup
         shutil.rmtree('/tmp/SUIS-main', ignore_errors=True)
-        if os.path.exists('/tmp/update.zip'):
-            os.remove('/tmp/update.zip')
         
         # Schedule restart in background (so response can be sent first)
         def delayed_restart():

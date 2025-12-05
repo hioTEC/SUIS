@@ -2,6 +2,21 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.21] - 2025-12-06
+
+### Fixed
+- Fixed Master update function: use Python `requests` instead of `curl` (not available in container)
+
+### Added
+- **Firewall management from Master panel**: 
+  - New "Firewall" button on each node card
+  - View current firewall status and allowed ports
+  - Configure allowed ports with support for port ranges (e.g., 8445-8450)
+  - Supports UFW, firewalld, and iptables
+- Node Agent firewall API: GET/POST `/api/v1/firewall`
+
+---
+
 ## [1.9.20] - 2025-12-06
 
 ### Fixed

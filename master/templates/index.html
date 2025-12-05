@@ -140,6 +140,7 @@
                         <button class="btn btn-outline btn-sm" onclick="showConfigModal('{{ id }}', 'singbox')">Config</button>
                         <button class="btn btn-outline btn-sm" onclick="showLogsModal('{{ id }}')">Logs</button>
                         <button class="btn btn-outline btn-sm" onclick="showPresetsModal('{{ id }}')">Presets</button>
+                        <button class="btn btn-outline btn-sm" onclick="showFirewallModal('{{ id }}')">🔥 Firewall</button>
                         <button class="btn btn-success btn-sm" onclick="restartNodeAll('{{ id }}')">Restart</button>
                         <button class="btn btn-warning btn-sm" onclick="updateNode('{{ id }}')">Update</button>
                         <button class="btn btn-danger btn-sm" onclick="deleteNode('{{ id }}')">Delete</button>
@@ -323,6 +324,30 @@
             <div class="form-actions" style="margin-top: 1rem;">
                 <button class="btn btn-outline" onclick="hideModal('presetsModal')">Close</button>
                 <button class="btn btn-warning" onclick="savePresets()">Save & Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firewall Modal -->
+    <div class="modal" id="firewallModal">
+        <div class="modal-content" style="max-width: 550px;">
+            <div class="modal-header">
+                <h3>🔥 Firewall Configuration</h3>
+                <button class="modal-close" onclick="hideModal('firewallModal')">&times;</button>
+            </div>
+            <input type="hidden" id="firewallNodeId">
+            <div id="firewallContent">Loading...</div>
+            <div class="form-group" style="margin-top: 1rem;">
+                <label>Allowed Ports (one per line or comma-separated)</label>
+                <textarea id="firewallPorts" placeholder="22&#10;80&#10;443&#10;53&#10;8443&#10;8444&#10;8445-8450" style="min-height: 150px; font-family: monospace;"></textarea>
+                <p style="font-size: 0.7rem; color: #64748b; margin-top: 0.5rem;">
+                    Supports port ranges like 8445-8450 for Hysteria2 multi-port.<br>
+                    Default: 22 (SSH), 80, 443 (HTTPS), 53 (DNS), 8443 (VLESS), 8444 (Hysteria2)
+                </p>
+            </div>
+            <div class="form-actions" style="margin-top: 1rem;">
+                <button class="btn btn-outline" onclick="hideModal('firewallModal')">Cancel</button>
+                <button class="btn btn-danger" onclick="applyFirewall()">Apply Firewall Rules</button>
             </div>
         </div>
     </div>
@@ -870,6 +895,82 @@
                 showToast(`Updated ${success}/${total} nodes`);
             } catch (err) {
                 showToast('Update failed', 'error');
+            }
+        }
+
+        // Firewall functions
+        async function showFirewallModal(nodeId) {
+            document.getElementById('firewallNodeId').value = nodeId;
+            document.getElementById('firewallContent').innerHTML = 'Loading firewall status...';
+            document.getElementById('firewallPorts').value = '';
+            document.getElementById('firewallModal').classList.add('active');
+            
+            try {
+                const resp = await fetch(`/api/nodes/${nodeId}/firewall`);
+                const data = await resp.json();
+                
+                if (data.error && data.error !== 'No firewall detected') {
+                    document.getElementById('firewallContent').innerHTML = `<p style="color: #fca5a5;">Error: ${data.error}</p>`;
+                    return;
+                }
+                
+                let html = `
+                    <div style="margin-bottom: 1rem;">
+                        <p style="font-size: 0.875rem;">
+                            <strong>Firewall Type:</strong> ${data.type || 'Not detected'}<br>
+                            <strong>Status:</strong> <span style="color: ${data.enabled ? '#86efac' : '#fca5a5'};">${data.enabled ? 'Active' : 'Inactive'}</span>
+                        </p>
+                    </div>
+                `;
+                
+                if (data.ports && data.ports.length > 0) {
+                    html += `<p style="font-size: 0.75rem; color: #94a3b8;">Current allowed ports: ${data.ports.join(', ')}</p>`;
+                    document.getElementById('firewallPorts').value = data.ports.join('\n');
+                } else {
+                    // Default ports
+                    document.getElementById('firewallPorts').value = '22\n80\n443\n53\n8443\n8444';
+                }
+                
+                document.getElementById('firewallContent').innerHTML = html;
+            } catch (err) {
+                document.getElementById('firewallContent').innerHTML = `<p style="color: #fca5a5;">Failed to load firewall status</p>`;
+            }
+        }
+        
+        async function applyFirewall() {
+            const nodeId = document.getElementById('firewallNodeId').value;
+            const portsText = document.getElementById('firewallPorts').value;
+            
+            // Parse ports (support newlines, commas, spaces)
+            const ports = portsText.split(/[\n,\s]+/).filter(p => p.trim());
+            
+            if (ports.length === 0) {
+                showToast('Please enter at least one port', 'error');
+                return;
+            }
+            
+            if (!confirm(`Apply firewall rules? This will:\n- Block all incoming traffic except specified ports\n- Ports to allow: ${ports.join(', ')}\n\nMake sure SSH port (22) is included!`)) {
+                return;
+            }
+            
+            showToast('Applying firewall rules...');
+            
+            try {
+                const resp = await fetch(`/api/nodes/${nodeId}/firewall`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ports})
+                });
+                const data = await resp.json();
+                
+                if (data.success) {
+                    showToast('Firewall rules applied successfully');
+                    hideModal('firewallModal');
+                } else {
+                    showToast(`Failed: ${data.error || data.message}`, 'error');
+                }
+            } catch (err) {
+                showToast('Failed to apply firewall rules', 'error');
             }
         }
 
