@@ -42,17 +42,12 @@ dig +short node1.example.com
 ### Install Master
 
 ```bash
-# Download and extract
-curl -L https://github.com/pjonix/SUIS/archive/refs/heads/main.zip -o SUIS.zip
-unzip SUIS.zip
-cd SUIS-main
+# One-line install
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --master
 
-# Or use wget:
-# wget https://github.com/pjonix/SUIS/archive/refs/heads/main.zip
-# unzip main.zip && cd SUIS-main
-
-# Run installer
-sudo ./install.sh --master
+# Or download manually:
+# curl -L https://github.com/pjonix/SUIS/archive/main.zip -o SUIS.zip && unzip SUIS.zip && cd SUIS-main
+# sudo ./install.sh --master
 ```
 
 > 📝 **Save the Cluster Secret** displayed after installation!
@@ -60,8 +55,8 @@ sudo ./install.sh --master
 ### Install Node
 
 ```bash
-sudo ./install.sh --node
-# Enter: Cluster Secret, Node Domain, Email
+# One-line install
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --node
 ```
 
 ### Add Node to Master
@@ -81,17 +76,12 @@ Open `https://YOUR_MASTER_DOMAIN` → Click **"+ Add Node"**
 ### 安装主控
 
 ```bash
-# 下载并解压
-curl -L https://github.com/pjonix/SUIS/archive/refs/heads/main.zip -o SUIS.zip
-unzip SUIS.zip
-cd SUIS-main
+# 一行命令安装
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --master
 
-# 或使用 wget:
-# wget https://github.com/pjonix/SUIS/archive/refs/heads/main.zip
-# unzip main.zip && cd SUIS-main
-
-# 运行安装脚本
-sudo ./install.sh --master
+# 或手动下载:
+# curl -L https://github.com/pjonix/SUIS/archive/main.zip -o SUIS.zip && unzip SUIS.zip && cd SUIS-main
+# sudo ./install.sh --master
 ```
 
 > 📝 **务必保存安装后显示的 Cluster Secret！**
@@ -99,8 +89,8 @@ sudo ./install.sh --master
 ### 安装节点
 
 ```bash
-sudo ./install.sh --node
-# 输入: Cluster Secret、节点域名、邮箱
+# 一行命令安装
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --node
 ```
 
 ---

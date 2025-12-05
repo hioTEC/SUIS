@@ -23,9 +23,16 @@ readonly PROJECT_NAME="SUI Solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
 readonly NODE_INSTALL_DIR="/opt/sui-solo/node"
 
+# GitHub repository URL
+readonly GITHUB_REPO="https://github.com/pjonix/SUIS"
+readonly GITHUB_ZIP="${GITHUB_REPO}/archive/refs/heads/main.zip"
+
 # Detect script directory - handle both direct run and extracted zip scenarios
 detect_script_dir() {
-    local dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local dir="$(cd "$(dirname "${BASH_SOURCE[0]}" 2>/dev/null)" 2>/dev/null && pwd)"
+    
+    # If running from pipe, dir might be empty or invalid
+    [[ -z "$dir" || "$dir" == "/" ]] && dir="$(pwd)"
     
     # Check if master/ and node/ directories exist in current location
     if [[ -d "$dir/master" && -d "$dir/node" ]]; then
@@ -34,7 +41,6 @@ detect_script_dir() {
     fi
     
     # Check if we're inside an extracted zip folder (e.g., SUIS-main/)
-    # Look for master/ and node/ in parent directory
     if [[ -d "$dir/../master" && -d "$dir/../node" ]]; then
         echo "$(cd "$dir/.." && pwd)"
         return 0
@@ -46,8 +52,8 @@ detect_script_dir() {
         return 0
     fi
     
-    # Return original dir and let validation handle the error
-    echo "$dir"
+    # Return empty to trigger download
+    echo ""
 }
 
 SCRIPT_DIR="$(detect_script_dir)"
@@ -133,6 +139,47 @@ backup_if_exists() {
     fi
 }
 
+download_source_files() {
+    log_step "Downloading source files from GitHub..."
+    local tmp_dir="/tmp/sui-solo-install-$$"
+    local zip_file="${tmp_dir}/suis.zip"
+    
+    mkdir -p "$tmp_dir"
+    
+    # Download zip
+    if curl -fsSL "$GITHUB_ZIP" -o "$zip_file"; then
+        echo -e "  ${CHECK} Downloaded source archive"
+    else
+        log_error "Failed to download from GitHub!"
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+    
+    # Extract
+    if unzip -q "$zip_file" -d "$tmp_dir"; then
+        echo -e "  ${CHECK} Extracted source files"
+    else
+        log_error "Failed to extract archive!"
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+    
+    # Find extracted directory (usually SUIS-main)
+    local extracted_dir=$(find "$tmp_dir" -maxdepth 1 -type d -name "SUIS*" | head -1)
+    if [[ -z "$extracted_dir" ]]; then
+        extracted_dir=$(find "$tmp_dir" -maxdepth 1 -type d ! -name "$(basename $tmp_dir)" | head -1)
+    fi
+    
+    if [[ -d "$extracted_dir/master" && -d "$extracted_dir/node" ]]; then
+        SCRIPT_DIR="$extracted_dir"
+        echo -e "  ${CHECK} Source directory: ${CYAN}${SCRIPT_DIR}${NC}"
+    else
+        log_error "Invalid archive structure!"
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+}
+
 #=============================================================================
 # PREREQUISITE CHECKS
 #=============================================================================
@@ -148,34 +195,16 @@ check_root() {
 
 check_source_files() {
     log_step "Checking source files..."
-    local errors=0
     
-    if [[ ! -d "${SCRIPT_DIR}/master" ]]; then
-        echo -e "  ${CROSS} Missing: ${RED}master/${NC} directory"
-        errors=$((errors + 1))
-    else
-        echo -e "  ${CHECK} Found master/ directory"
+    # If SCRIPT_DIR is empty or doesn't contain required dirs, download from GitHub
+    if [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" || ! -d "${SCRIPT_DIR}/node" ]]; then
+        echo -e "  ${WARN} Source files not found locally"
+        download_source_files
+        return 0
     fi
     
-    if [[ ! -d "${SCRIPT_DIR}/node" ]]; then
-        echo -e "  ${CROSS} Missing: ${RED}node/${NC} directory"
-        errors=$((errors + 1))
-    else
-        echo -e "  ${CHECK} Found node/ directory"
-    fi
-    
-    if [[ $errors -gt 0 ]]; then
-        echo ""
-        log_error "Source files not found in: ${SCRIPT_DIR}"
-        echo ""
-        echo -e "  ${WARN} If you downloaded a ZIP from GitHub, make sure to:"
-        echo -e "      1. Extract the ZIP file: ${YELLOW}unzip SUIS-main.zip${NC}"
-        echo -e "      2. Enter the extracted directory: ${YELLOW}cd SUIS-main${NC}"
-        echo -e "      3. Run the script: ${YELLOW}sudo ./install.sh${NC}"
-        echo ""
-        exit 1
-    fi
-    
+    echo -e "  ${CHECK} Found master/ directory"
+    echo -e "  ${CHECK} Found node/ directory"
     echo -e "  ${CHECK} Source directory: ${CYAN}${SCRIPT_DIR}${NC}"
 }
 
