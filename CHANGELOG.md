@@ -2,6 +2,15 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.10] - 2025-12-06
+
+### Fixed
+- `kill_port_process` now stops SUI Solo Docker containers before killing port processes
+- Added support for OpenRC and SysVinit (not just systemd) for Docker service management
+- Better compatibility with Alpine Linux and other non-systemd distributions
+
+---
+
 ## [1.9.9] - 2025-12-06
 
 ### Fixed

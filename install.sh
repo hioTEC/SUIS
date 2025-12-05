@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.9"
+readonly VERSION="1.9.10"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -192,7 +192,14 @@ check_dependencies() {
         else
             log_info "Installing Docker..."
             curl -fsSL https://get.docker.com | sh
-            systemctl enable docker && systemctl start docker
+            # Start Docker service (support both systemd and OpenRC)
+            if command -v systemctl &>/dev/null; then
+                systemctl enable docker && systemctl start docker
+            elif command -v rc-service &>/dev/null; then
+                rc-update add docker default && rc-service docker start
+            elif command -v service &>/dev/null; then
+                service docker start
+            fi
             # Wait for Docker to be ready
             log_info "Waiting for Docker to start..."
             local retries=30
@@ -201,7 +208,7 @@ check_dependencies() {
                 ((retries--))
             done
             if ! docker info &>/dev/null; then
-                log_error "Docker failed to start. Please run: systemctl start docker"
+                log_error "Docker failed to start. Try manually: systemctl start docker OR service docker start"
                 exit 1
             fi
             echo -e "  ${CHECK} Docker is ready"
@@ -224,7 +231,19 @@ check_port() {
 
 kill_port_process() {
     local port=$1
-    log_info "Killing process on port $port..."
+    log_info "Freeing port $port..."
+    
+    # First try to stop SUI Solo containers that might be using the port
+    local sui_containers=("sui-gateway" "sui-master" "sui-agent" "sui-singbox" "sui-adguard")
+    for container in "${sui_containers[@]}"; do
+        if docker ps -q -f name="$container" 2>/dev/null | grep -q .; then
+            log_info "Stopping container: $container"
+            docker stop "$container" 2>/dev/null || true
+            docker rm -f "$container" 2>/dev/null || true
+        fi
+    done
+    
+    # Then try to kill any remaining process on the port
     if [[ "$OS_TYPE" == "macos" ]]; then
         local pid=$(lsof -ti :$port 2>/dev/null)
         [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null || true
