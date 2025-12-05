@@ -2,6 +2,21 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.19] - 2025-12-06
+
+### Added
+- **update.sh**: Standalone update script for command-line updates
+  - Usage: `./update.sh [master|node|all]`
+  - Auto-downloads latest version from GitHub
+  - Auto-restarts containers after update
+  - Creates backups before updating
+
+### Changed
+- Master update API now auto-restarts container after update (no manual restart needed)
+- Update runs in background thread so API response is sent before restart
+
+---
+
 ## [1.9.18] - 2025-12-06
 
 ### Fixed

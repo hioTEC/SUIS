@@ -20,7 +20,7 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 SALT = "SUI_Solo_Secured_2025"
-VERSION = "1.9.18"
+VERSION = "1.9.19"
 GITHUB_REPO = "https://github.com/pjonix/SUIS"
 GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/main"
 
@@ -338,13 +338,16 @@ def update_check():
 @app.route('/api/update/master', methods=['POST'])
 @rate_limit(auth_limiter)
 def update_master():
-    """Update master to latest version"""
+    """Update master to latest version and restart"""
+    import shutil
+    import threading
+    
     try:
         # Get the directory where app.py is located
         app_dir = os.path.dirname(os.path.abspath(__file__))
         templates_dir = os.path.join(app_dir, 'templates')
         
-        # Download and update files
+        # Download latest
         result = subprocess.run(
             ['curl', '-fsSL', 'https://github.com/pjonix/SUIS/archive/main.zip', '-o', '/tmp/update.zip'],
             capture_output=True, text=True, timeout=30
@@ -359,16 +362,35 @@ def update_master():
         if result.returncode != 0:
             return jsonify({'success': False, 'error': f'Unzip failed: {result.stderr}'})
         
-        # Copy new files
-        import shutil
-        shutil.copy('/tmp/SUIS-main/master/app.py', os.path.join(app_dir, 'app.py'))
-        shutil.copy('/tmp/SUIS-main/master/templates/index.html', os.path.join(templates_dir, 'index.html'))
+        # Backup and copy new files
+        for f in ['app.py']:
+            src = f'/tmp/SUIS-main/master/{f}'
+            dst = os.path.join(app_dir, f)
+            if os.path.exists(src):
+                shutil.copy(dst, f'{dst}.bak') if os.path.exists(dst) else None
+                shutil.copy(src, dst)
+        
+        for f in ['index.html']:
+            src = f'/tmp/SUIS-main/master/templates/{f}'
+            dst = os.path.join(templates_dir, f)
+            if os.path.exists(src):
+                shutil.copy(dst, f'{dst}.bak') if os.path.exists(dst) else None
+                shutil.copy(src, dst)
         
         # Cleanup
         shutil.rmtree('/tmp/SUIS-main', ignore_errors=True)
-        os.remove('/tmp/update.zip') if os.path.exists('/tmp/update.zip') else None
+        if os.path.exists('/tmp/update.zip'):
+            os.remove('/tmp/update.zip')
         
-        return jsonify({'success': True, 'message': 'Update downloaded. Restart container to apply.'})
+        # Schedule restart in background (so response can be sent first)
+        def delayed_restart():
+            import time
+            time.sleep(1)
+            subprocess.run(['docker', 'restart', 'sui-master'], capture_output=True, timeout=30)
+        
+        threading.Thread(target=delayed_restart, daemon=True).start()
+        
+        return jsonify({'success': True, 'message': 'Update complete. Restarting in 1 second...'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
