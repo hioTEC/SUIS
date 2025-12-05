@@ -88,7 +88,7 @@ log_step()    { echo -e "${ARROW} ${BOLD}$1${NC}"; }
 
 print_banner() {
     echo -e "${CYAN}"
-    cat << 'EOF'
+    cat << EOF
 ╔═══════════════════════════════════════════════════════════════════╗
 ║                                                                   ║
 ║     ███████╗██╗   ██╗██╗    ███████╗ ██████╗ ██╗      ██████╗     ║
@@ -99,7 +99,7 @@ print_banner() {
 ║     ╚══════╝ ╚═════╝ ╚═╝    ╚══════╝ ╚═════╝ ╚══════╝ ╚═════╝     ║
 ║                                                                   ║
 ║           Distributed Proxy Cluster Management System             ║
-║                        Version 1.0.0                              ║
+║                        Version ${VERSION}                              ║
 ╚═══════════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
@@ -112,7 +112,7 @@ confirm() {
     local prompt="${1:-Are you sure?}"
     local default="${2:-n}"
     [[ "$default" == "y" ]] && prompt="$prompt [Y/n]: " || prompt="$prompt [y/N]: "
-    read -r -p "$prompt" response
+    read -r -p "$prompt" response < /dev/tty
     response=${response:-$default}
     [[ "$response" =~ ^[Yy]$ ]]
 }
@@ -328,7 +328,7 @@ install_master() {
         echo "    2) Reinstall (backup and create new)"
         echo "    3) Cancel"
         echo ""
-        read -r -p "  Select [1-3]: " choice
+        read -r -p "  Select [1-3]: " choice < /dev/tty
         case $choice in
             1) source "$MASTER_INSTALL_DIR/.env"; UPGRADE_MODE=true ;;
             2) backup_if_exists "$MASTER_INSTALL_DIR/.env" ;;
@@ -347,14 +347,14 @@ install_master() {
         
         # Master Domain (REQUIRED for HTTPS)
         while [[ -z "$MASTER_DOMAIN" ]]; do
-            read -r -p "  Enter Master panel domain (e.g., panel.example.com): " MASTER_DOMAIN
+            read -r -p "  Enter Master panel domain (e.g., panel.example.com): " MASTER_DOMAIN < /dev/tty
             if [[ -z "$MASTER_DOMAIN" ]]; then
                 log_error "Domain is required for HTTPS!"
             fi
         done
         
         # ACME Email
-        read -r -p "  Enter email for SSL certificates [admin@example.com]: " ACME_EMAIL
+        read -r -p "  Enter email for SSL certificates [admin@example.com]: " ACME_EMAIL < /dev/tty
         ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
         
         # Generate Cluster Secret
@@ -444,7 +444,7 @@ install_node() {
         echo "    2) Reinstall (backup and create new)"
         echo "    3) Cancel"
         echo ""
-        read -r -p "  Select [1-3]: " choice
+        read -r -p "  Select [1-3]: " choice < /dev/tty
         case $choice in
             1) source "$NODE_INSTALL_DIR/.env"; UPGRADE_MODE=true ;;
             2) backup_if_exists "$NODE_INSTALL_DIR/.env" ;;
@@ -462,7 +462,7 @@ install_node() {
         
         # Cluster Secret
         while [[ -z "$CLUSTER_SECRET" ]]; do
-            read -r -p "  Enter Cluster Secret (from Master): " CLUSTER_SECRET
+            read -r -p "  Enter Cluster Secret (from Master): " CLUSTER_SECRET < /dev/tty
             if [[ -z "$CLUSTER_SECRET" ]]; then
                 log_error "Cluster secret is required!"
             elif [[ ${#CLUSTER_SECRET} -lt 32 ]]; then
@@ -473,12 +473,12 @@ install_node() {
         
         # Node Domain
         while [[ -z "$NODE_DOMAIN" ]]; do
-            read -r -p "  Enter node domain (e.g., node1.example.com): " NODE_DOMAIN
+            read -r -p "  Enter node domain (e.g., node1.example.com): " NODE_DOMAIN < /dev/tty
             [[ -z "$NODE_DOMAIN" ]] && log_error "Domain is required!"
         done
         
         # ACME Email
-        read -r -p "  Enter email for SSL certificates [admin@example.com]: " ACME_EMAIL
+        read -r -p "  Enter email for SSL certificates [admin@example.com]: " ACME_EMAIL < /dev/tty
         ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
     fi
     
@@ -590,7 +590,7 @@ uninstall() {
     echo "    3) Everything"
     echo "    4) Cancel"
     echo ""
-    read -r -p "  Choice [1-4]: " choice
+    read -r -p "  Choice [1-4]: " choice < /dev/tty
     
     case $choice in
         1)
@@ -628,7 +628,7 @@ show_logs() {
     echo "    4) Node - Sing-box"
     echo "    5) Node - AdGuard"
     echo ""
-    read -r -p "  Choice [1-5]: " choice
+    read -r -p "  Choice [1-5]: " choice < /dev/tty
     case $choice in
         1) cd "$MASTER_INSTALL_DIR" && docker compose logs -f --tail=100 ;;
         2) cd "$NODE_INSTALL_DIR" && docker compose logs -f --tail=100 ;;
@@ -652,7 +652,7 @@ show_menu() {
     echo -e "  ${CYAN}5)${NC} Uninstall"
     echo -e "  ${CYAN}6)${NC} Exit"
     echo ""
-    read -r -p "Select [1-6]: " choice
+    read -r -p "Select [1-6]: " choice < /dev/tty
     
     case $choice in
         1) install_master ;;
