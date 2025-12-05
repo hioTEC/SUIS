@@ -2,6 +2,14 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.6.0] - 2024-12-05
+
+### Changed
+- Version bump to 1.6.0
+- Enabled auto version increment for future code changes
+
+---
+
 ## [1.5.0] - 2024-12-05
 
 ### Added
@@ -11,10 +19,18 @@ All notable changes to SUI Solo will be documented in this file.
 - **Node Update Button**: Update individual nodes from the dashboard
 - **Update All Nodes**: One-click update for all connected nodes
 - **Version Display**: Show current version in header
+- **Uninstall Command**: `--uninstall` flag for easy removal
+- **Reinstall Command**: `--reinstall` flag with option to keep or delete settings
+- **Port Conflict Resolution**: Option to kill processes occupying required ports
 
 ### Changed
 - Improved node card UI with more actions
 - Better error handling for API calls
+- Improved installation output formatting
+- Better visual display of Cluster Secret after installation
+
+### Fixed
+- Fixed output formatting issues (URL display)
 
 ### Security
 - Removed secret display from dashboard (security fix)

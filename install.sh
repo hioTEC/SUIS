@@ -18,7 +18,7 @@ set -e
 #=============================================================================
 # CONSTANTS & COLORS
 #=============================================================================
-readonly VERSION="1.5.0"
+readonly VERSION="1.6.0"
 readonly PROJECT_NAME="SUI Solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
 readonly NODE_INSTALL_DIR="/opt/sui-solo/node"
@@ -338,6 +338,21 @@ check_port() {
     return 0
 }
 
+kill_port_process() {
+    local port=$1
+    log_info "Killing process on port $port..."
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        local pid=$(lsof -ti :$port 2>/dev/null)
+        [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null
+    else
+        local pid=$(ss -tlnp | grep ":${port} " | grep -oP 'pid=\K\d+' | head -1)
+        [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null
+        # Also try fuser
+        fuser -k ${port}/tcp 2>/dev/null || true
+    fi
+    sleep 1
+}
+
 check_ports_avail() {
     local ports=("$@")
     local blocked=()
@@ -348,7 +363,31 @@ check_ports_avail() {
         fi
     done
     if [[ ${#blocked[@]} -gt 0 ]]; then
-        confirm "Ports busy. Continue?" "n" || exit 1
+        echo ""
+        echo "  Options:"
+        echo "    1) Kill processes and continue"
+        echo "    2) Continue anyway (may fail)"
+        echo "    3) Cancel"
+        echo ""
+        read -r -p "  Select [1-3]: " choice < /dev/tty
+        case $choice in
+            1)
+                for p in "${blocked[@]}"; do
+                    kill_port_process "$p"
+                done
+                # Verify ports are free now
+                for p in "${blocked[@]}"; do
+                    if ! check_port "$p"; then
+                        log_error "Failed to free port $p"
+                        exit 1
+                    fi
+                done
+                log_success "Ports freed successfully"
+                ;;
+            2) log_warn "Continuing with busy ports..." ;;
+            3) log_info "Cancelled"; exit 0 ;;
+            *) log_error "Invalid choice"; exit 1 ;;
+        esac
     fi
 }
 
@@ -434,9 +473,17 @@ EOF
     cd "$MASTER_INSTALL_DIR"
     docker compose up -d --build
     
-    log_success "Master Installed."
-    echo -e "${MAGENTA}CLUSTER SECRET: ${BOLD}${secret}${NC}"
-    echo -e "URL: https://${domain}"
+    echo ""
+    log_success "Master Installed!"
+    echo ""
+    echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${MAGENTA}║${NC}  ${BOLD}CLUSTER SECRET${NC} (Save this! Required for node installation)  ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${MAGENTA}║${NC}  ${YELLOW}${secret}${NC}  ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  ${ARROW} Control Panel: ${CYAN}https://${domain}${NC}"
+    echo ""
 }
 
 install_node() {
@@ -482,9 +529,13 @@ EOF
     cd "$NODE_INSTALL_DIR"
     docker compose up -d --build
     
-    log_success "Node Installed."
-    echo -e "Node API: https://${domain}/${path_prefix}/api/v1/"
-    echo -e "AdGuard:  https://${domain}/adguard/"
+    echo ""
+    log_success "Node Installed!"
+    echo ""
+    echo -e "  ${ARROW} Node URL:     ${CYAN}https://${domain}${NC}"
+    echo -e "  ${ARROW} AdGuard Home: ${CYAN}https://${domain}/adguard/${NC}"
+    echo -e "  ${ARROW} API Path:     ${CYAN}/${path_prefix}/api/v1/${NC}"
+    echo ""
 }
 
 #=============================================================================
@@ -512,9 +563,199 @@ main() {
     fi
 }
 
+#=============================================================================
+# UNINSTALL
+#=============================================================================
+uninstall() {
+    print_banner
+    log_step "Uninstall ${PROJECT_NAME}"
+    echo ""
+    echo "  Select component to uninstall:"
+    echo "    1) Master only"
+    echo "    2) Node only"
+    echo "    3) Everything"
+    echo "    4) Cancel"
+    echo ""
+    read -r -p "  Choice [1-4]: " choice < /dev/tty
+    
+    case $choice in
+        1)
+            if [[ -d "$MASTER_INSTALL_DIR" ]]; then
+                confirm "Remove Master and all its data?" "n" || exit 0
+                log_info "Stopping Master containers..."
+                cd "$MASTER_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
+                rm -rf "$MASTER_INSTALL_DIR"
+                log_success "Master uninstalled!"
+            else
+                log_warn "Master not installed"
+            fi
+            ;;
+        2)
+            if [[ -d "$NODE_INSTALL_DIR" ]]; then
+                confirm "Remove Node and all its data?" "n" || exit 0
+                log_info "Stopping Node containers..."
+                cd "$NODE_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
+                rm -rf "$NODE_INSTALL_DIR"
+                log_success "Node uninstalled!"
+            else
+                log_warn "Node not installed"
+            fi
+            ;;
+        3)
+            confirm "Remove ALL SUI Solo components and data?" "n" || exit 0
+            log_info "Stopping all containers..."
+            [[ -d "$MASTER_INSTALL_DIR" ]] && cd "$MASTER_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
+            [[ -d "$NODE_INSTALL_DIR" ]] && cd "$NODE_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
+            rm -rf /opt/sui-solo
+            log_success "All SUI Solo components uninstalled!"
+            ;;
+        4)
+            log_info "Cancelled"
+            ;;
+        *)
+            log_error "Invalid choice"
+            ;;
+    esac
+}
+
+#=============================================================================
+# REINSTALL (Clean install with option to keep settings)
+#=============================================================================
+reinstall() {
+    print_banner
+    log_step "Reinstall ${PROJECT_NAME}"
+    echo ""
+    
+    # Check what's installed
+    local has_master=false
+    local has_node=false
+    [[ -d "$MASTER_INSTALL_DIR" ]] && has_master=true
+    [[ -d "$NODE_INSTALL_DIR" ]] && has_node=true
+    
+    if [[ "$has_master" == "false" && "$has_node" == "false" ]]; then
+        log_warn "No existing installation found. Running normal install..."
+        main
+        return
+    fi
+    
+    echo "  Existing installations found:"
+    [[ "$has_master" == "true" ]] && echo -e "    ${CHECK} Master"
+    [[ "$has_node" == "true" ]] && echo -e "    ${CHECK} Node"
+    echo ""
+    
+    echo "  Select reinstall option:"
+    echo "    1) Keep settings (.env files) - Recommended"
+    echo "    2) Fresh install (delete all settings)"
+    echo "    3) Cancel"
+    echo ""
+    read -r -p "  Choice [1-3]: " choice < /dev/tty
+    
+    local keep_settings=false
+    case $choice in
+        1) keep_settings=true ;;
+        2) keep_settings=false ;;
+        3) log_info "Cancelled"; exit 0 ;;
+        *) log_error "Invalid choice"; exit 1 ;;
+    esac
+    
+    # Backup settings if needed
+    local backup_dir="/tmp/sui-solo-backup-$$"
+    if [[ "$keep_settings" == "true" ]]; then
+        log_info "Backing up settings..."
+        mkdir -p "$backup_dir"
+        [[ -f "$MASTER_INSTALL_DIR/.env" ]] && cp "$MASTER_INSTALL_DIR/.env" "$backup_dir/master.env"
+        [[ -f "$NODE_INSTALL_DIR/.env" ]] && cp "$NODE_INSTALL_DIR/.env" "$backup_dir/node.env"
+        [[ -f "$NODE_INSTALL_DIR/config/singbox/config.json" ]] && cp "$NODE_INSTALL_DIR/config/singbox/config.json" "$backup_dir/singbox.json"
+        echo -e "  ${CHECK} Settings backed up"
+    fi
+    
+    # Stop and remove existing installations
+    log_info "Stopping existing containers..."
+    [[ "$has_master" == "true" ]] && cd "$MASTER_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
+    [[ "$has_node" == "true" ]] && cd "$NODE_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
+    
+    log_info "Removing existing files..."
+    rm -rf /opt/sui-solo
+    
+    # Download fresh source
+    check_dependencies
+    download_source_files
+    
+    # Restore settings if backed up
+    if [[ "$keep_settings" == "true" && -d "$backup_dir" ]]; then
+        log_info "Restoring settings..."
+        
+        # Load settings from backup
+        if [[ -f "$backup_dir/master.env" ]]; then
+            source "$backup_dir/master.env"
+            domain="$MASTER_DOMAIN"
+            email="$ACME_EMAIL"
+            secret="$CLUSTER_SECRET"
+        fi
+        if [[ -f "$backup_dir/node.env" ]]; then
+            source "$backup_dir/node.env"
+            domain="$NODE_DOMAIN"
+            email="$ACME_EMAIL"
+            secret="$CLUSTER_SECRET"
+        fi
+    fi
+    
+    # Reinstall components
+    if [[ "$has_master" == "true" ]]; then
+        INSTALL_MODE="master"
+        if [[ "$keep_settings" == "false" ]]; then
+            collect_inputs
+        else
+            log_info "Using saved settings for Master"
+        fi
+        install_master
+        
+        # Restore singbox config if exists
+        if [[ -f "$backup_dir/singbox.json" && "$has_node" == "true" ]]; then
+            mkdir -p "$NODE_INSTALL_DIR/config/singbox"
+            cp "$backup_dir/singbox.json" "$NODE_INSTALL_DIR/config/singbox/config.json"
+        fi
+    fi
+    
+    if [[ "$has_node" == "true" ]]; then
+        # Reload node settings
+        if [[ "$keep_settings" == "true" && -f "$backup_dir/node.env" ]]; then
+            source "$backup_dir/node.env"
+            domain="$NODE_DOMAIN"
+            secret="$CLUSTER_SECRET"
+        fi
+        
+        INSTALL_MODE="node"
+        if [[ "$keep_settings" == "false" ]]; then
+            collect_inputs
+        else
+            log_info "Using saved settings for Node"
+        fi
+        install_node
+    fi
+    
+    # Cleanup backup
+    rm -rf "$backup_dir"
+    
+    echo ""
+    log_success "Reinstall complete!"
+}
+
 case "${1:-}" in
     --master) CLI_MODE="master"; main ;;
     --node)   CLI_MODE="node"; main ;;
-    --help)   echo "Usage: sudo $0 [--master|--node]"; exit 0 ;;
+    --reinstall) check_os; check_root; reinstall ;;
+    --uninstall) check_os; check_root; uninstall ;;
+    --help|-h)
+        echo "Usage: sudo $0 [OPTION]"
+        echo ""
+        echo "Options:"
+        echo "  --master     Install Master (Control Panel)"
+        echo "  --node       Install Node (Proxy Agent)"
+        echo "  --reinstall  Reinstall (keep or delete settings)"
+        echo "  --uninstall  Uninstall SUI Solo"
+        echo "  --help       Show this help"
+        exit 0
+        ;;
     *)        main ;;
 esac

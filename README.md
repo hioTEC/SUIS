@@ -162,11 +162,20 @@ cd /opt/sui-solo/node && docker compose logs -f
 # 重启服务
 cd /opt/sui-solo/master && docker compose restart
 cd /opt/sui-solo/node && docker compose restart
+```
 
-# 卸载
-cd /opt/sui-solo/master && docker compose down -v
-cd /opt/sui-solo/node && docker compose down -v
-rm -rf /opt/sui-solo
+### 重新安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --reinstall
+```
+
+可选择保留或删除现有设置。
+
+### 卸载
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --uninstall
 ```
 
 ### 配置文件位置
