@@ -2,6 +2,15 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.6.1] - 2024-12-06
+
+### Fixed
+- Fixed overwrite installation not updating Caddy config (domain stuck on old value)
+- Added detection for existing installation with option to overwrite or cancel
+- Containers now properly stopped before overwrite to ensure new config takes effect
+
+---
+
 ## [1.6.0] - 2024-12-05
 
 ### Changed

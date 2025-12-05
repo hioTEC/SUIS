@@ -18,7 +18,7 @@ set -e
 #=============================================================================
 # CONSTANTS & COLORS
 #=============================================================================
-readonly VERSION="1.6.0"
+readonly VERSION="1.6.1"
 readonly PROJECT_NAME="SUI Solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
 readonly NODE_INSTALL_DIR="/opt/sui-solo/node"
@@ -439,12 +439,31 @@ EOF
 #=============================================================================
 install_master() {
     log_step "Installing Master..."
+    
+    # Check for existing installation
+    if [[ -d "$MASTER_INSTALL_DIR" ]]; then
+        log_warn "Existing Master installation detected!"
+        echo ""
+        echo "  Options:"
+        echo "    1) Overwrite (update domain/settings)"
+        echo "    2) Cancel"
+        echo ""
+        read -r -p "  Select [1-2]: " choice < /dev/tty
+        case $choice in
+            1) 
+                log_info "Stopping existing containers..."
+                cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
+                ;;
+            *) log_info "Cancelled"; exit 0 ;;
+        esac
+    fi
+    
     check_ports_avail 80 443 5000
 
     mkdir -p "$MASTER_INSTALL_DIR/config/caddy"
     cp -r "${SCRIPT_DIR}/master/"* "$MASTER_INSTALL_DIR/"
     
-    # Caddyfile
+    # Caddyfile (always regenerate to apply new domain)
     cat > "$MASTER_INSTALL_DIR/config/caddy/Caddyfile" << EOF
 {
     email ${email}
@@ -488,6 +507,25 @@ EOF
 
 install_node() {
     log_step "Installing Node..."
+    
+    # Check for existing installation
+    if [[ -d "$NODE_INSTALL_DIR" ]]; then
+        log_warn "Existing Node installation detected!"
+        echo ""
+        echo "  Options:"
+        echo "    1) Overwrite (update domain/settings)"
+        echo "    2) Cancel"
+        echo ""
+        read -r -p "  Select [1-2]: " choice < /dev/tty
+        case $choice in
+            1) 
+                log_info "Stopping existing containers..."
+                cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true
+                ;;
+            *) log_info "Cancelled"; exit 0 ;;
+        esac
+    fi
+    
     check_ports_avail 80 443 53
 
     local path_prefix=$(echo -n "${SALT}:${secret}" | sha256sum | cut -c1-16)
