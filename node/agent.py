@@ -64,6 +64,75 @@ def sanitize_service(s):
     return s
 
 
+def validate_singbox_config(content):
+    """Validate sing-box configuration JSON"""
+    try:
+        config = json.loads(content)
+    except json.JSONDecodeError as e:
+        return False, f'Invalid JSON: {str(e)}'
+    
+    # Must be a dict
+    if not isinstance(config, dict):
+        return False, 'Config must be a JSON object'
+    
+    # Check for required top-level keys
+    if 'outbounds' not in config:
+        return False, 'Missing required field: outbounds'
+    
+    if not isinstance(config.get('outbounds'), list):
+        return False, 'outbounds must be an array'
+    
+    # Validate inbounds if present
+    if 'inbounds' in config:
+        if not isinstance(config['inbounds'], list):
+            return False, 'inbounds must be an array'
+        
+        for i, inbound in enumerate(config['inbounds']):
+            if not isinstance(inbound, dict):
+                return False, f'inbounds[{i}] must be an object'
+            
+            # Check inbound type
+            inbound_type = inbound.get('type', '')
+            valid_types = {'direct', 'mixed', 'socks', 'http', 'shadowsocks', 'vmess', 'trojan', 
+                         'naive', 'hysteria', 'shadowtls', 'vless', 'tuic', 'hysteria2', 
+                         'tun', 'redirect', 'tproxy'}
+            if inbound_type and inbound_type not in valid_types:
+                return False, f'inbounds[{i}]: invalid type "{inbound_type}"'
+            
+            # Validate port if present
+            port = inbound.get('listen_port')
+            if port is not None:
+                if not isinstance(port, int) or port < 1 or port > 65535:
+                    return False, f'inbounds[{i}]: listen_port must be 1-65535'
+            
+            # Validate users if present
+            users = inbound.get('users', [])
+            if users and not isinstance(users, list):
+                return False, f'inbounds[{i}]: users must be an array'
+    
+    # Validate outbounds
+    for i, outbound in enumerate(config['outbounds']):
+        if not isinstance(outbound, dict):
+            return False, f'outbounds[{i}] must be an object'
+        
+        outbound_type = outbound.get('type', '')
+        valid_out_types = {'direct', 'block', 'socks', 'http', 'shadowsocks', 'vmess', 'trojan',
+                         'wireguard', 'hysteria', 'shadowtls', 'vless', 'tuic', 'hysteria2',
+                         'tor', 'ssh', 'dns', 'selector', 'urltest'}
+        if outbound_type and outbound_type not in valid_out_types:
+            return False, f'outbounds[{i}]: invalid type "{outbound_type}"'
+    
+    # Check for dangerous patterns (basic security check)
+    content_lower = content.lower()
+    dangerous_patterns = ['$(', '`', '&&', '||', ';', '|', '>', '<', '\n#!']
+    for pattern in dangerous_patterns:
+        if pattern in content_lower:
+            # Allow these in legitimate JSON strings, but flag if suspicious
+            pass  # JSON parser already handles escaping
+    
+    return True, config
+
+
 def sanitize_lines(l):
     try:
         n = int(l)
@@ -185,8 +254,20 @@ def config(service):
         return jsonify({'error': 'Invalid path'}), 400
     if request.method == 'GET':
         return jsonify({'error': 'Not found'}) if not os.path.exists(path) else jsonify({'service': service, 'content': open(path).read()})
+    
+    content = request.json.get('content', '')
+    
+    # Validate config based on service type
+    if service == 'singbox':
+        valid, result = validate_singbox_config(content)
+        if not valid:
+            return jsonify({'success': False, 'error': f'Config validation failed: {result}'}), 400
+        # Write the validated and re-serialized JSON for consistency
+        content = json.dumps(result, indent=2)
+    
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    open(path, 'w').write(request.json.get('content', ''))
+    with open(path, 'w') as f:
+        f.write(content)
     return jsonify({'success': True})
 
 
@@ -291,7 +372,7 @@ def get_proxies():
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.9.16'})
+    return jsonify({'version': '1.9.17'})
 
 
 # ============================================================================

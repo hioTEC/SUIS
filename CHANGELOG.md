@@ -2,6 +2,21 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.17] - 2025-12-06
+
+### Added
+- **Sing-box config validation**: Node agent now validates JSON format and structure before saving
+  - Checks for valid JSON syntax
+  - Validates required fields (outbounds)
+  - Validates inbound/outbound types against sing-box spec
+  - Validates port ranges (1-65535)
+  - Re-serializes JSON for consistent formatting
+
+### Security
+- Config validation prevents malformed configurations from being saved
+
+---
+
 ## [1.9.16] - 2025-12-06
 
 ### Removed
