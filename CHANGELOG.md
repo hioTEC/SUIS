@@ -2,6 +2,21 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.13] - 2025-12-06
+
+### Added
+- Master panel: "System Controls" section with Rebuild Master/Gateway buttons
+- Master panel: "Subscribe" button with subscription URL modal
+- Subscription API: `/api/subscribe` supports base64, clash, singbox formats
+- Subscription URL API: `/api/subscribe/url` returns all format URLs
+- Master rebuild API: `/api/master/rebuild`
+- Gateway rebuild API: `/api/gateway/rebuild`
+
+### Changed
+- Improved dashboard layout with quick action buttons
+
+---
+
 ## [1.9.12] - 2025-12-06
 
 ### Added

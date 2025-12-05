@@ -77,10 +77,24 @@
         <header>
             <h1>🚀 SUI Solo <span class="https-badge">v{{ version }}</span></h1>
             <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button class="btn btn-outline" onclick="showSubscribeModal()">📋 Subscribe</button>
                 <button class="btn btn-outline" onclick="showSettingsModal()">⚙️ Settings</button>
                 <button class="btn btn-primary" onclick="showAddModal()">+ Add Node</button>
             </div>
         </header>
+
+        <!-- Quick Actions Card -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+            <div class="card-header">
+                <h2>🔧 System Controls</h2>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button class="btn btn-success btn-sm" onclick="rebuildMaster()">🔄 Rebuild Master</button>
+                <button class="btn btn-success btn-sm" onclick="rebuildGateway()">🌐 Rebuild Gateway</button>
+                <button class="btn btn-warning btn-sm" onclick="updateMaster()">⬆️ Update Master</button>
+                <button class="btn btn-warning btn-sm" onclick="updateAllNodes()">⬆️ Update All Nodes</button>
+            </div>
+        </div>
         
         <div class="card">
             <div class="card-header">
@@ -175,6 +189,40 @@
         </div>
     </div>
 
+    <!-- Subscribe Modal -->
+    <div class="modal" id="subscribeModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📋 Subscription Links</h3>
+                <button class="modal-close" onclick="hideModal('subscribeModal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>Base64 (v2rayN, Shadowrocket)</label>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="subBase64" readonly style="flex: 1;">
+                    <button class="btn btn-sm btn-primary" onclick="copyToClipboard('subBase64')">Copy</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Clash Format</label>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="subClash" readonly style="flex: 1;">
+                    <button class="btn btn-sm btn-primary" onclick="copyToClipboard('subClash')">Copy</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Sing-box Format</label>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="subSingbox" readonly style="flex: 1;">
+                    <button class="btn btn-sm btn-primary" onclick="copyToClipboard('subSingbox')">Copy</button>
+                </div>
+            </div>
+            <p style="font-size: 0.75rem; color: #64748b; margin-top: 1rem;">
+                💡 Copy the subscription link and paste it into your proxy client.
+            </p>
+        </div>
+    </div>
+
     <!-- Config Modal -->
     <div class="modal" id="configModal">
         <div class="modal-content">
@@ -259,6 +307,51 @@
 
         function showAddModal() { document.getElementById('addModal').classList.add('active'); }
         function hideModal(id) { document.getElementById(id).classList.remove('active'); }
+
+        async function showSubscribeModal() {
+            document.getElementById('subscribeModal').classList.add('active');
+            try {
+                const resp = await fetch('/api/subscribe/url');
+                const data = await resp.json();
+                document.getElementById('subBase64').value = data.base64 || '';
+                document.getElementById('subClash').value = data.clash || '';
+                document.getElementById('subSingbox').value = data.singbox || '';
+            } catch (err) {
+                showToast('Failed to load subscription URLs', 'error');
+            }
+        }
+
+        function copyToClipboard(elementId) {
+            const el = document.getElementById(elementId);
+            el.select();
+            document.execCommand('copy');
+            showToast('Copied to clipboard!');
+        }
+
+        async function rebuildMaster() {
+            if (!confirm('Rebuild Master container? This will restart the control panel.')) return;
+            showToast('Rebuilding Master...');
+            try {
+                const resp = await fetch('/api/master/rebuild', {method: 'POST'});
+                const data = await resp.json();
+                showToast(data.success ? 'Master rebuild initiated. Page will reload...' : `Failed: ${data.error}`, data.success ? 'success' : 'error');
+                if (data.success) setTimeout(() => location.reload(), 10000);
+            } catch (err) {
+                showToast('Rebuild failed', 'error');
+            }
+        }
+
+        async function rebuildGateway() {
+            if (!confirm('Rebuild Gateway container? This may briefly interrupt HTTPS.')) return;
+            showToast('Rebuilding Gateway...');
+            try {
+                const resp = await fetch('/api/gateway/rebuild', {method: 'POST'});
+                const data = await resp.json();
+                showToast(data.success ? 'Gateway rebuilt successfully' : `Failed: ${data.error}`, data.success ? 'success' : 'error');
+            } catch (err) {
+                showToast('Rebuild failed', 'error');
+            }
+        }
 
         document.getElementById('addForm').onsubmit = async (e) => {
             e.preventDefault();

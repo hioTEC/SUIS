@@ -20,7 +20,7 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 SALT = "SUI_Solo_Secured_2025"
-VERSION = "1.9.12"
+VERSION = "1.9.13"
 GITHUB_REPO = "https://github.com/pjonix/SUIS"
 GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/main"
 
@@ -358,6 +358,129 @@ def update_all_nodes():
     for node_id, node in nodes.items():
         results[node_id] = call_node_api(node, 'update', 'POST', timeout=120)
     return jsonify(results)
+
+
+@app.route('/api/master/rebuild', methods=['POST'])
+@rate_limit(auth_limiter)
+def rebuild_master():
+    """Rebuild and restart Master container"""
+    try:
+        result = subprocess.run(
+            ['sh', '-c', '''
+                cd /opt/sui-solo/master
+                docker compose down
+                docker compose up -d --build
+            '''],
+            capture_output=True, text=True, timeout=180
+        )
+        return jsonify({'success': result.returncode == 0, 'output': result.stdout + result.stderr})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/gateway/rebuild', methods=['POST'])
+@rate_limit(auth_limiter)
+def rebuild_gateway():
+    """Rebuild and restart Gateway container"""
+    try:
+        result = subprocess.run(
+            ['sh', '-c', '''
+                cd /opt/sui-solo/gateway
+                docker compose down
+                docker compose up -d
+            '''],
+            capture_output=True, text=True, timeout=60
+        )
+        return jsonify({'success': result.returncode == 0, 'output': result.stdout + result.stderr})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+# ============================================================================
+# SUBSCRIPTION API
+# ============================================================================
+@app.route('/api/subscribe')
+@rate_limit(api_limiter)
+def subscribe():
+    """Generate aggregated subscription for all online nodes"""
+    nodes = load_nodes()
+    format_type = request.args.get('format', 'base64')  # base64, clash, singbox
+    
+    configs = []
+    for node_id, node in nodes.items():
+        if node.get('status') == 'online':
+            # Get node's singbox config
+            result = call_node_api(node, 'config/singbox')
+            if 'content' in result:
+                try:
+                    config = json.loads(result['content'])
+                    config['_node_name'] = node['name']
+                    config['_node_domain'] = node['domain']
+                    configs.append(config)
+                except:
+                    pass
+    
+    if format_type == 'singbox':
+        # Return merged sing-box config
+        merged = {
+            'log': {'level': 'info'},
+            'inbounds': [],
+            'outbounds': [{'type': 'direct', 'tag': 'direct'}],
+            'route': {'rules': [], 'final': 'direct'}
+        }
+        for cfg in configs:
+            if 'outbounds' in cfg:
+                for ob in cfg['outbounds']:
+                    if ob.get('type') not in ['direct', 'block']:
+                        ob['tag'] = f"{cfg.get('_node_name', 'node')}-{ob.get('tag', 'proxy')}"
+                        merged['outbounds'].append(ob)
+        return jsonify(merged)
+    
+    elif format_type == 'clash':
+        # Return Clash format
+        proxies = []
+        for cfg in configs:
+            if 'outbounds' in cfg:
+                for ob in cfg['outbounds']:
+                    if ob.get('type') == 'vless':
+                        proxies.append({
+                            'name': f"{cfg.get('_node_name', 'node')}",
+                            'type': 'vless',
+                            'server': cfg.get('_node_domain', ''),
+                            'port': ob.get('server_port', 443),
+                            'uuid': ob.get('uuid', ''),
+                            'tls': True
+                        })
+        clash_config = {
+            'proxies': proxies,
+            'proxy-groups': [{'name': 'auto', 'type': 'url-test', 'proxies': [p['name'] for p in proxies]}]
+        }
+        return jsonify(clash_config)
+    
+    else:
+        # Return base64 encoded links
+        import base64
+        links = []
+        for cfg in configs:
+            if 'outbounds' in cfg:
+                for ob in cfg['outbounds']:
+                    if ob.get('type') == 'vless':
+                        link = f"vless://{ob.get('uuid', '')}@{cfg.get('_node_domain', '')}:{ob.get('server_port', 443)}?type=tcp&security=tls#{cfg.get('_node_name', 'node')}"
+                        links.append(link)
+        result = '\n'.join(links)
+        return base64.b64encode(result.encode()).decode()
+
+
+@app.route('/api/subscribe/url')
+@rate_limit(api_limiter)
+def subscribe_url():
+    """Get subscription URL info"""
+    master_domain = os.environ.get('MASTER_DOMAIN', 'localhost')
+    return jsonify({
+        'base64': f"https://{master_domain}/api/subscribe?format=base64",
+        'clash': f"https://{master_domain}/api/subscribe?format=clash",
+        'singbox': f"https://{master_domain}/api/subscribe?format=singbox"
+    })
 
 
 @app.route('/health')
