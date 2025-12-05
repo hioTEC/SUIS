@@ -6,7 +6,7 @@
 - [x] 1.1 检查 node/agent.py 容器状态查询逻辑
 - [x] 1.2 修复容器名称匹配问题 (sui-caddy -> sui-gateway)
 - [x] 1.3 确保 Docker socket 权限正确 (移除 cap_drop: ALL)
-- [ ] 1.4 测试 /services API 返回正确状态
+- [x] 1.4 测试 /services API 返回正确状态 (修复容器名 sui-gateway → sui-caddy)
 
 ### 2. 实现聚合订阅生成
 - [x] 2.1 Master 添加订阅生成 API `/api/subscribe`
@@ -72,3 +72,4 @@
 | 2025-12-06 | 1.9.17 | Sing-box 配置校验 |
 | 2025-12-06 | 1.9.18 | 修复 Master 更新、订阅链接生成 |
 | 2025-12-06 | 1.9.19 | 添加 update.sh 脚本，更新后自动重启 |
+| 2025-12-06 | 1.9.20 | 修复容器名、添加防火墙配置 |

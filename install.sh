@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.14"
+readonly VERSION="1.9.20"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -778,6 +778,165 @@ EOF
     echo -e "${GREEN}Hysteria2:${NC}"
     echo -e "${hy2_link}"
     echo ""
+    
+    # Offer firewall configuration
+    configure_firewall_prompt
+}
+
+#=============================================================================
+# FIREWALL CONFIGURATION
+#=============================================================================
+configure_firewall_prompt() {
+    echo ""
+    if confirm "Configure firewall to block unnecessary ports? (Recommended)" "y"; then
+        configure_firewall
+    else
+        log_warn "Skipping firewall configuration"
+        echo -e "  ${YELLOW}Note: AdGuard Home port 3000 is exposed. Consider blocking it manually.${NC}"
+    fi
+}
+
+configure_firewall() {
+    log_step "Configuring firewall..."
+    
+    # Default ports to allow
+    local default_ports="22 80 443 53 8443 8444"
+    
+    echo ""
+    echo -e "  ${CYAN}Default allowed ports:${NC}"
+    echo -e "    22    - SSH"
+    echo -e "    80    - HTTP (Caddy)"
+    echo -e "    443   - HTTPS (Caddy)"
+    echo -e "    53    - DNS (AdGuard)"
+    echo -e "    8443  - VLESS proxy"
+    echo -e "    8444  - Hysteria2 proxy"
+    echo ""
+    echo -e "  ${YELLOW}Ports that will be BLOCKED:${NC}"
+    echo -e "    3000  - AdGuard Home Web UI (access via https://domain/adguard/)"
+    echo ""
+    
+    read -r -p "  Additional ports to allow (space-separated, e.g., '8445 8446-8450'): " extra_ports < /dev/tty
+    
+    local all_ports="$default_ports $extra_ports"
+    
+    # Detect firewall tool
+    if command -v ufw &>/dev/null; then
+        configure_ufw "$all_ports"
+    elif command -v firewall-cmd &>/dev/null; then
+        configure_firewalld "$all_ports"
+    elif command -v iptables &>/dev/null; then
+        configure_iptables "$all_ports"
+    else
+        log_warn "No supported firewall tool found (ufw/firewalld/iptables)"
+        log_info "Please configure firewall manually"
+        return 1
+    fi
+    
+    log_success "Firewall configured!"
+}
+
+configure_ufw() {
+    local ports="$1"
+    log_info "Configuring UFW..."
+    
+    # Reset UFW
+    ufw --force reset >/dev/null 2>&1
+    
+    # Default deny incoming
+    ufw default deny incoming >/dev/null 2>&1
+    ufw default allow outgoing >/dev/null 2>&1
+    
+    # Allow specified ports
+    for port in $ports; do
+        if [[ "$port" == *-* ]]; then
+            # Port range
+            ufw allow "$port/tcp" >/dev/null 2>&1
+            ufw allow "$port/udp" >/dev/null 2>&1
+        else
+            ufw allow "$port" >/dev/null 2>&1
+        fi
+        echo -e "    ${CHECK} Allowed port $port"
+    done
+    
+    # Enable UFW
+    ufw --force enable >/dev/null 2>&1
+    
+    echo ""
+    log_info "UFW status:"
+    ufw status numbered
+}
+
+configure_firewalld() {
+    local ports="$1"
+    log_info "Configuring firewalld..."
+    
+    # Start firewalld if not running
+    systemctl start firewalld 2>/dev/null || true
+    systemctl enable firewalld 2>/dev/null || true
+    
+    # Remove all existing ports from public zone
+    for port in $(firewall-cmd --zone=public --list-ports 2>/dev/null); do
+        firewall-cmd --zone=public --remove-port="$port" --permanent >/dev/null 2>&1
+    done
+    
+    # Add specified ports
+    for port in $ports; do
+        if [[ "$port" == *-* ]]; then
+            firewall-cmd --zone=public --add-port="${port}/tcp" --permanent >/dev/null 2>&1
+            firewall-cmd --zone=public --add-port="${port}/udp" --permanent >/dev/null 2>&1
+        else
+            firewall-cmd --zone=public --add-port="${port}/tcp" --permanent >/dev/null 2>&1
+            firewall-cmd --zone=public --add-port="${port}/udp" --permanent >/dev/null 2>&1
+        fi
+        echo -e "    ${CHECK} Allowed port $port"
+    done
+    
+    # Reload firewalld
+    firewall-cmd --reload >/dev/null 2>&1
+    
+    echo ""
+    log_info "Firewalld status:"
+    firewall-cmd --list-all
+}
+
+configure_iptables() {
+    local ports="$1"
+    log_info "Configuring iptables..."
+    
+    # Flush existing rules
+    iptables -F INPUT 2>/dev/null || true
+    
+    # Default policies
+    iptables -P INPUT DROP
+    iptables -P FORWARD DROP
+    iptables -P OUTPUT ACCEPT
+    
+    # Allow loopback
+    iptables -A INPUT -i lo -j ACCEPT
+    
+    # Allow established connections
+    iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    
+    # Allow specified ports
+    for port in $ports; do
+        if [[ "$port" == *-* ]]; then
+            iptables -A INPUT -p tcp --dport "$port" -j ACCEPT
+            iptables -A INPUT -p udp --dport "$port" -j ACCEPT
+        else
+            iptables -A INPUT -p tcp --dport "$port" -j ACCEPT
+            iptables -A INPUT -p udp --dport "$port" -j ACCEPT
+        fi
+        echo -e "    ${CHECK} Allowed port $port"
+    done
+    
+    # Save rules
+    if command -v iptables-save &>/dev/null; then
+        mkdir -p /etc/iptables
+        iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+    fi
+    
+    echo ""
+    log_info "iptables rules applied"
 }
 
 #=============================================================================

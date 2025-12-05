@@ -2,6 +2,21 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.20] - 2025-12-06
+
+### Fixed
+- Fixed container name mismatch in Node Agent: `sui-gateway` → `sui-caddy`
+- This fixes the "not found" status for Caddy service
+
+### Added
+- **Firewall configuration**: Install script now offers to configure firewall
+  - Supports UFW, firewalld, and iptables
+  - Default allows: SSH(22), HTTP(80), HTTPS(443), DNS(53), VLESS(8443), Hysteria2(8444)
+  - Blocks AdGuard Home direct port (3000) - access via reverse proxy instead
+  - Option to add custom port ranges for Hysteria2 multi-port
+
+---
+
 ## [1.9.19] - 2025-12-06
 
 ### Added

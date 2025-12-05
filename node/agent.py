@@ -144,13 +144,13 @@ def sanitize_lines(l):
 ALLOWED_COMMANDS = {
     'restart_singbox': ['docker', 'restart', 'sui-singbox'],
     'restart_adguard': ['docker', 'restart', 'sui-adguard'],
-    'restart_caddy': ['docker', 'restart', 'sui-gateway'],
+    'restart_caddy': ['docker', 'restart', 'sui-caddy'],
     'status_singbox': ['docker', 'inspect', '-f', '{{.State.Status}}', 'sui-singbox'],
     'status_adguard': ['docker', 'inspect', '-f', '{{.State.Status}}', 'sui-adguard'],
-    'status_caddy': ['docker', 'inspect', '-f', '{{.State.Status}}', 'sui-gateway'],
+    'status_caddy': ['docker', 'inspect', '-f', '{{.State.Status}}', 'sui-caddy'],
     'logs_singbox': ['docker', 'logs', '--tail', '{lines}', 'sui-singbox'],
     'logs_adguard': ['docker', 'logs', '--tail', '{lines}', 'sui-adguard'],
-    'logs_caddy': ['docker', 'logs', '--tail', '{lines}', 'sui-gateway'],
+    'logs_caddy': ['docker', 'logs', '--tail', '{lines}', 'sui-caddy'],
     'uptime': ['cat', '/proc/uptime'],
 }
 
@@ -372,7 +372,7 @@ def get_proxies():
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.9.19'})
+    return jsonify({'version': '1.9.20'})
 
 
 # ============================================================================
