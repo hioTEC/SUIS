@@ -2,6 +2,15 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.7] - 2025-12-06
+
+### Fixed
+- Fixed sui-singbox container restarting (exit code 0)
+- Added explicit `command: ["run", "-c", "/etc/sing-box/config.json"]` to singbox service
+- sing-box now properly loads config file on startup
+
+---
+
 ## [1.9.6] - 2025-12-06
 
 ### Fixed

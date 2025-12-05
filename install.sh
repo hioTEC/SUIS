@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.6"
+readonly VERSION="1.9.7"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -626,6 +626,7 @@ services:
     image: ghcr.io/sagernet/sing-box:latest
     container_name: sui-singbox
     restart: unless-stopped
+    command: ["run", "-c", "/etc/sing-box/config.json"]
     volumes: [./config/singbox:/etc/sing-box:ro]
     networks: [sui-node-net]
     cap_add: [NET_ADMIN]

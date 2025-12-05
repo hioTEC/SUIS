@@ -42,6 +42,7 @@ services:
     image: ghcr.io/sagernet/sing-box:latest
     container_name: sui-singbox
     restart: unless-stopped
+    command: ["run", "-c", "/etc/sing-box/config.json"]
     volumes:
       - ./config/singbox:/etc/sing-box:ro
     networks:
