@@ -372,7 +372,7 @@ def get_proxies():
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.9.17'})
+    return jsonify({'version': '1.9.18'})
 
 
 # ============================================================================

@@ -2,6 +2,15 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.18] - 2025-12-06
+
+### Fixed
+- Fixed Master update function - now uses correct file paths instead of hardcoded `/opt/sui-solo/master`
+- Fixed subscription URL generation - auto-detects domain from request if `MASTER_DOMAIN` env not set
+- Simplified subscription URLs (removed redundant `?format=base64` for default format)
+
+---
+
 ## [1.9.17] - 2025-12-06
 
 ### Added

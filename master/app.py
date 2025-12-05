@@ -20,7 +20,7 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 SALT = "SUI_Solo_Secured_2025"
-VERSION = "1.9.17"
+VERSION = "1.9.18"
 GITHUB_REPO = "https://github.com/pjonix/SUIS"
 GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/main"
 
@@ -340,23 +340,35 @@ def update_check():
 def update_master():
     """Update master to latest version"""
     try:
-        # Download latest files
+        # Get the directory where app.py is located
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        templates_dir = os.path.join(app_dir, 'templates')
+        
+        # Download and update files
         result = subprocess.run(
-            ['sh', '-c', '''
-                cd /opt/sui-solo/master
-                curl -fsSL https://github.com/pjonix/SUIS/archive/main.zip -o /tmp/update.zip
-                unzip -o /tmp/update.zip -d /tmp/
-                cp /tmp/SUIS-main/master/app.py ./app.py.new
-                cp /tmp/SUIS-main/master/templates/index.html ./templates/index.html.new
-                mv ./app.py.new ./app.py
-                mv ./templates/index.html.new ./templates/index.html
-                rm -rf /tmp/update.zip /tmp/SUIS-main
-            '''],
-            capture_output=True, text=True, timeout=60
+            ['curl', '-fsSL', 'https://github.com/pjonix/SUIS/archive/main.zip', '-o', '/tmp/update.zip'],
+            capture_output=True, text=True, timeout=30
         )
-        if result.returncode == 0:
-            return jsonify({'success': True, 'message': 'Update downloaded. Restart container to apply.'})
-        return jsonify({'success': False, 'error': result.stderr})
+        if result.returncode != 0:
+            return jsonify({'success': False, 'error': f'Download failed: {result.stderr}'})
+        
+        result = subprocess.run(
+            ['unzip', '-o', '/tmp/update.zip', '-d', '/tmp/'],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            return jsonify({'success': False, 'error': f'Unzip failed: {result.stderr}'})
+        
+        # Copy new files
+        import shutil
+        shutil.copy('/tmp/SUIS-main/master/app.py', os.path.join(app_dir, 'app.py'))
+        shutil.copy('/tmp/SUIS-main/master/templates/index.html', os.path.join(templates_dir, 'index.html'))
+        
+        # Cleanup
+        shutil.rmtree('/tmp/SUIS-main', ignore_errors=True)
+        os.remove('/tmp/update.zip') if os.path.exists('/tmp/update.zip') else None
+        
+        return jsonify({'success': True, 'message': 'Update downloaded. Restart container to apply.'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -572,13 +584,16 @@ def subscribe():
 @rate_limit(api_limiter)
 def subscribe_url():
     """Get subscription URL info"""
-    master_domain = os.environ.get('MASTER_DOMAIN', 'localhost')
+    master_domain = os.environ.get('MASTER_DOMAIN', '')
+    # Try to get domain from request if not set in env
+    if not master_domain:
+        master_domain = request.host.split(':')[0]
     hidden_path = get_hidden_path(CLUSTER_SECRET)
     return jsonify({
-        'base64': f"https://{master_domain}/{hidden_path}/sub?format=base64",
+        'base64': f"https://{master_domain}/{hidden_path}/sub",
         'clash': f"https://{master_domain}/{hidden_path}/sub?format=clash",
         'singbox': f"https://{master_domain}/{hidden_path}/sub?format=singbox",
-        'public_base64': f"https://{master_domain}/api/subscribe?format=base64",
+        'public_base64': f"https://{master_domain}/api/subscribe",
         'public_clash': f"https://{master_domain}/api/subscribe?format=clash",
         'public_singbox': f"https://{master_domain}/api/subscribe?format=singbox"
     })
