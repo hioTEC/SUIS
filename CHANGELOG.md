@@ -2,6 +2,16 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.16] - 2025-12-06
+
+### Removed
+- Removed "System Controls" section from dashboard (Restart Master, Restart Gateway, Update Master, Update All Nodes buttons)
+
+### Fixed
+- Fixed node services status showing "not found" on page load - now auto-checks node status first before loading services
+
+---
+
 ## [1.9.15] - 2025-12-06
 
 ### Added

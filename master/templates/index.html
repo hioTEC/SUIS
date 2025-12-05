@@ -83,18 +83,7 @@
             </div>
         </header>
 
-        <!-- Quick Actions Card -->
-        <div class="card" style="margin-bottom: 1.5rem;">
-            <div class="card-header">
-                <h2>🔧 System Controls</h2>
-            </div>
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                <button class="btn btn-success btn-sm" onclick="restartMaster()">🔄 Restart Master</button>
-                <button class="btn btn-success btn-sm" onclick="restartGateway()">🌐 Restart Gateway</button>
-                <button class="btn btn-warning btn-sm" onclick="updateMaster()">⬆️ Update Master</button>
-                <button class="btn btn-warning btn-sm" onclick="updateAllNodes()">⬆️ Update All Nodes</button>
-            </div>
-        </div>
+
         
         <div class="card">
             <div class="card-header">
@@ -889,7 +878,7 @@
             const nodes = document.querySelectorAll('.node-card');
             nodes.forEach(node => {
                 const id = node.id.replace('node-', '');
-                loadServices(id);
+                checkStatus(id);
             });
         });
     </script>
