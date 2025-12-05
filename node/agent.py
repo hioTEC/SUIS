@@ -192,7 +192,7 @@ def update():
         result = subprocess.run(
             ['sh', '-c', '''
                 cd /opt/sui-solo/node
-                curl -fsSL https://github.com/pjonix/SUIS/archive/Eng.zip -o /tmp/update.zip
+                curl -fsSL https://github.com/pjonix/SUIS/archive/main.zip -o /tmp/update.zip
                 unzip -o /tmp/update.zip -d /tmp/
                 cp /tmp/SUIS-main/node/agent.py ./agent.py.new
                 cp /tmp/SUIS-main/node/templates/Caddyfile.template ./templates/Caddyfile.template.new

@@ -320,7 +320,7 @@ def update_master():
         result = subprocess.run(
             ['sh', '-c', '''
                 cd /opt/sui-solo/master
-                curl -fsSL https://github.com/pjonix/SUIS/archive/Eng.zip -o /tmp/update.zip
+                curl -fsSL https://github.com/pjonix/SUIS/archive/main.zip -o /tmp/update.zip
                 unzip -o /tmp/update.zip -d /tmp/
                 cp /tmp/SUIS-main/master/app.py ./app.py.new
                 cp /tmp/SUIS-main/master/templates/index.html ./templates/index.html.new
