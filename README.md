@@ -175,14 +175,38 @@ curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo 
 
 ## 🔧 Troubleshooting
 
+### Quick Diagnostics
+
+Run the automated diagnostic tool to check for common issues:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hioTEC/SUIS/main/diagnose.sh | bash
+```
+
+This will check:
+- ✓ Docker status and iptables mode
+- ✓ Docker networks
+- ✓ Container status
+- ✓ Port conflicts
+- ✓ Configuration files
+
+### Common Issues
+
 | Issue | Solution |
 |-------|----------|
-| SSL certificate error | Check DNS: `dig +short YOUR_DOMAIN` |
-| Rate limit exceeded | Wait 60-120 seconds |
-| Token error | Check Secret in `.env` files on both Master and Node |
-| Port in use | `sudo lsof -i :80` or `sudo ss -tlnp \| grep :80` |
-| Node offline | Check Node services: `cd /opt/sui-solo/node && docker compose ps` |
-| Blank page | Rebuild containers: `docker compose down && docker compose up -d --build` |
+| **Service shows "not found"** | Rebuild agent: `cd /opt/sui-solo/node && docker compose build --no-cache agent && docker compose up -d` |
+| **Docker won't start** | Fix iptables: `update-alternatives --set iptables /usr/sbin/iptables-legacy && systemctl restart docker` |
+| **Network not found** | Create networks: `docker network create sui-master-net && docker network create sui-node-net` |
+| **SSL certificate error** | Check DNS: `dig +short YOUR_DOMAIN` |
+| **Rate limit exceeded** | Wait 60-120 seconds |
+| **Token error** | Check Secret in `.env` files on both Master and Node |
+| **Port in use** | `sudo lsof -i :80` or `sudo ss -tlnp \| grep :80` |
+| **Node offline** | Check Node services: `cd /opt/sui-solo/node && docker compose ps` |
+| **Blank page** | Rebuild containers: `docker compose down && docker compose up -d --build` |
+
+📚 **Detailed Guide:** See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for comprehensive solutions
+
+🔍 **Recent Improvements:** See [IMPROVEMENTS.md](IMPROVEMENTS.md) for v1.9.22 enhancements
 
 ---
 
