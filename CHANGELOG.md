@@ -2,6 +2,49 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [2.0.0] - 2025-12-06
+
+### 🚀 Major Architecture Overhaul
+
+**Breaking Changes:**
+- **VLESS now runs on port 443** (was 8443) - Standard HTTPS port
+- **Sing-box handles TLS/ACME** (was Caddy) - Auto certificate management
+- **Caddy moved to internal network** - HTTP fallback only
+- **Hysteria2 uses UDP 50000-60000** - Port hopping for anti-blocking
+- **Removed Reality protocol** - Use standard TLS with ACME
+- **Removed preset system** - Config generated during installation
+- **Removed shared gateway mode** - Simplified architecture
+
+**New Architecture:**
+```
+Client → Sing-box (443) → VLESS/Hysteria2 proxy
+                        ↓ Fallback
+                        → Caddy (internal:80) → Camouflage site
+                                              → Agent API
+```
+
+**Migration:**
+- Old installations must be uninstalled and reinstalled
+- No migration script provided (clean install required)
+- Backup your data before upgrading
+
+**New Features:**
+- ✅ VLESS + XTLS-Vision on standard port 443
+- ✅ Hysteria2 with port hopping (50000-60000 UDP)
+- ✅ Sing-box ACME auto-renewal (Let's Encrypt)
+- ✅ Subscription aggregation from nodes (with 5min cache)
+- ✅ Caddy fallback for camouflage
+- ✅ Concurrent node subscription fetching
+
+**Improvements:**
+- Better stealth (standard ports)
+- Better performance (port hopping)
+- Simpler architecture (no shared gateway)
+- Auto certificate management
+- Real-time subscription from nodes
+
+---
+
 ## [1.9.22] - 2025-12-06
 
 ### Added
