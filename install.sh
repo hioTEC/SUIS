@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.8.0"
+readonly VERSION="1.8.1"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -986,7 +986,10 @@ install_both() {
 #=============================================================================
 main() {
     print_banner
-    select_language
+    
+    # Only select language in interactive mode (no CLI args)
+    [[ -z "$CLI_MODE" ]] && select_language
+    
     check_os
     check_root
     
@@ -1012,6 +1015,9 @@ show_help() {
     echo "  --uninstall  $(msg help_uninstall)"
     echo "  --help       $(msg help_help)"
 }
+
+# Detect language from environment or use default
+[[ -n "${LANG}" && "${LANG}" =~ ^zh ]] && LANG_CODE="zh" || LANG_CODE="en"
 
 case "${1:-}" in
     --master)    CLI_MODE="master"; main ;;

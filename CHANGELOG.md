@@ -2,6 +2,15 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.8.1] - 2025-12-06
+
+### Fixed
+- Fixed installation script exiting after language selection
+- Language selection now only appears in interactive mode (no CLI args)
+- CLI mode (`--master`, `--node`) now auto-detects language from system
+
+---
+
 ## [1.8.0] - 2025-12-06
 
 ### Added
@@ -14,6 +23,7 @@ All notable changes to SUI Solo will be documented in this file.
 - Separated README.md (English) and README_CN.md (Chinese)
 - Removed `--reinstall` command (use `--uninstall` + reinstall instead)
 - Simplified CLI options: `--master`, `--node`, `--both`, `--uninstall`, `--help`
+- Updated all 2024 references to 2025
 
 ### Removed
 - Removed redundant `--reinstall` functionality
