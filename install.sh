@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.2"
+readonly VERSION="1.9.3"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -305,14 +305,14 @@ generate_shared_caddyfile() {
     local caddyfile="$GATEWAY_DIR/Caddyfile"
     local m_domain="" n_domain="" n_path_prefix="" acme_email="${email:-admin@example.com}"
     
-    [[ -f "$MASTER_INSTALL_DIR/.env" ]] && {
+    if [[ -f "$MASTER_INSTALL_DIR/.env" ]]; then
         m_domain=$(grep '^MASTER_DOMAIN=' "$MASTER_INSTALL_DIR/.env" | cut -d= -f2)
         acme_email=$(grep '^ACME_EMAIL=' "$MASTER_INSTALL_DIR/.env" | cut -d= -f2)
-    }
-    [[ -f "$NODE_INSTALL_DIR/.env" ]] && {
+    fi
+    if [[ -f "$NODE_INSTALL_DIR/.env" ]]; then
         n_domain=$(grep '^NODE_DOMAIN=' "$NODE_INSTALL_DIR/.env" | cut -d= -f2)
         n_path_prefix=$(grep '^PATH_PREFIX=' "$NODE_INSTALL_DIR/.env" | cut -d= -f2)
-    }
+    fi
     
     cat > "$caddyfile" << EOF
 {
@@ -320,7 +320,7 @@ generate_shared_caddyfile() {
 }
 EOF
     
-    [[ -n "$m_domain" ]] && {
+    if [[ -n "$m_domain" ]]; then
         cat >> "$caddyfile" << EOF
 
 ${m_domain} {
@@ -334,9 +334,9 @@ ${m_domain} {
 }
 EOF
         echo -e "  ${CHECK} Added Master: ${m_domain}"
-    }
+    fi
     
-    [[ -n "$n_domain" && -n "$n_path_prefix" ]] && {
+    if [[ -n "$n_domain" && -n "$n_path_prefix" ]]; then
         cat >> "$caddyfile" << EOF
 
 ${n_domain} {
@@ -349,7 +349,7 @@ ${n_domain} {
 }
 EOF
         echo -e "  ${CHECK} Added Node: ${n_domain}"
-    }
+    fi
 }
 
 start_shared_gateway() {
@@ -391,7 +391,7 @@ EOF
 #=============================================================================
 load_env_defaults() {
     local env_file="$1"
-    [[ -f "$env_file" ]] && {
+    if [[ -f "$env_file" ]]; then
         log_info "Reading defaults from existing .env..."
         local s=$(grep '^CLUSTER_SECRET=' "$env_file" | cut -d= -f2)
         local d=$(grep '^MASTER_DOMAIN=' "$env_file" | cut -d= -f2)
@@ -401,7 +401,7 @@ load_env_defaults() {
         [[ -n "$d" ]] && domain="$d" || true
         [[ -n "$nd" ]] && domain="$nd" || true
         [[ -n "$e" ]] && email="$e" || true
-    }
+    fi
 }
 
 collect_inputs() {
@@ -448,10 +448,13 @@ collect_inputs() {
         done
         log_info "AdGuard Home will be configured with: User: admin | Pass: sui-solo"
     else
-        [[ -z "$secret" ]] && {
-            command -v openssl &>/dev/null && secret=$(openssl rand -hex 32) || \
+        if [[ -z "$secret" ]]; then
+            if command -v openssl &>/dev/null; then
+                secret=$(openssl rand -hex 32)
+            else
                 secret=$(head -c 64 /dev/urandom | sha256sum | cut -d' ' -f1)
-        }
+            fi
+        fi
     fi
 
     echo ""
@@ -718,11 +721,11 @@ install_both() {
     log_step "Installing Master + Node on same server"
     echo ""
     
-    [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" ]] && {
+    if [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" ]]; then
         log_warn "Source files not found locally"
         check_dependencies
         download_source_files
-    }
+    fi
     
     check_dependencies
     
@@ -776,16 +779,20 @@ main() {
     check_os
     check_root
     
-    [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" ]] && {
+    if [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" ]]; then
         log_warn "Source files not found locally"
         check_dependencies
         download_source_files
-    }
+    fi
 
     collect_inputs
     check_dependencies
     
-    [[ "$INSTALL_MODE" == "master" ]] && install_master || install_node
+    if [[ "$INSTALL_MODE" == "master" ]]; then
+        install_master
+    else
+        install_node
+    fi
 }
 
 show_help() {

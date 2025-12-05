@@ -2,6 +2,15 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.3] - 2025-12-06
+
+### Fixed
+- Replaced ALL `[[ ]] && { }` patterns with proper `if/then/fi` blocks
+- Fixed `generate_shared_caddyfile()` causing script exit when node not installed
+- Fixed `load_env_defaults()`, `install_both()`, and `main()` functions
+
+---
+
 ## [1.9.2] - 2025-12-06
 
 ### Fixed
