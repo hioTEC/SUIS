@@ -96,10 +96,11 @@ generate_secret() {
     fi
 }
 
-compute_api_path() {
-    local secret="$1"
-    local domain="$2"
-    echo -n "${secret}:${domain}" | sha256sum | cut -c1-8
+compute_hidden_path() {
+    # Must match Python: SALT + ":" + token -> SHA256 -> first 16 chars
+    local token="$1"
+    local salt="NexusProxy_Secured_2024"
+    echo -n "${salt}:${token}" | sha256sum | cut -c1-16
 }
 
 backup_if_exists() {
@@ -434,11 +435,11 @@ install_node() {
         ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
     fi
     
-    # Compute API path
-    API_PATH=$(compute_api_path "$CLUSTER_SECRET" "$NODE_DOMAIN")
+    # Compute hidden path prefix (salted hash)
+    PATH_PREFIX=$(compute_hidden_path "$CLUSTER_SECRET")
     
     echo ""
-    log_info "Computed hidden API path: /api/${API_PATH}/"
+    log_info "Computed hidden API path: /${PATH_PREFIX}/api/v1/"
     
     # Check ports
     check_ports 80 443 53
@@ -456,7 +457,7 @@ install_node() {
     # Generate Caddyfile
     log_info "Generating Caddyfile..."
     sed -e "s/{\\\$NODE_DOMAIN}/${NODE_DOMAIN}/g" \
-        -e "s/{\\\$API_PATH}/${API_PATH}/g" \
+        -e "s/{\\\$PATH_PREFIX}/${PATH_PREFIX}/g" \
         -e "s/{\\\$ACME_EMAIL}/${ACME_EMAIL}/g" \
         "${NODE_INSTALL_DIR}/templates/Caddyfile.template" > "$NODE_INSTALL_DIR/config/caddy/Caddyfile"
     
@@ -493,7 +494,7 @@ SINGBOX_EOF
 # Generated: $(date -Iseconds)
 CLUSTER_SECRET=${CLUSTER_SECRET}
 NODE_DOMAIN=${NODE_DOMAIN}
-API_PATH=${API_PATH}
+PATH_PREFIX=${PATH_PREFIX}
 ACME_EMAIL=${ACME_EMAIL}
 EOF
     
@@ -506,7 +507,7 @@ EOF
     log_success "Node installation complete!"
     echo ""
     echo -e "  ${ARROW} Node URL:      ${CYAN}https://${NODE_DOMAIN}${NC}"
-    echo -e "  ${ARROW} API Path:      ${CYAN}/api/${API_PATH}/${NC}"
+    echo -e "  ${ARROW} API Path:      ${CYAN}/${PATH_PREFIX}/api/v1/${NC}"
     echo -e "  ${ARROW} AdGuard Home:  ${CYAN}https://${NODE_DOMAIN}/adguard/${NC}"
     echo -e "  ${ARROW} Config Dir:    ${CYAN}${NODE_INSTALL_DIR}${NC}"
     echo ""

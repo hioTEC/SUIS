@@ -4,8 +4,8 @@
 }
 
 {$NODE_DOMAIN} {
-    # Agent API (hidden path)
-    handle /api/{$API_PATH}/* {
+    # Hidden API endpoint (salted hash path)
+    handle /{$PATH_PREFIX}/api/v1/* {
         reverse_proxy agent:5001
     }
 
@@ -30,9 +30,14 @@
         reverse_proxy singbox:9090
     }
 
-    # Default response
+    # Health check (public)
+    handle /health {
+        reverse_proxy agent:5001
+    }
+
+    # Fallback: Camouflage page (defense in depth)
     handle {
-        respond "NexusProxy Node" 200
+        respond "Welcome to our server" 200
     }
 
     # Security headers

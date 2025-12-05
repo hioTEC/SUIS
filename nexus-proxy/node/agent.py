@@ -15,12 +15,33 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODE_DOMAIN = os.environ.get('NODE_DOMAIN', '')
 CONFIG_DIR = os.environ.get('CONFIG_DIR', '/config')
 
-# Compute hidden API path
-def compute_api_path(secret: str, domain: str) -> str:
-    combined = f"{secret}:{domain}"
-    return hashlib.sha256(combined.encode()).hexdigest()[:8]
+# Security: Hardcoded salt for path generation (must match master)
+SALT = "NexusProxy_Secured_2024"
 
-API_PATH = compute_api_path(CLUSTER_SECRET, NODE_DOMAIN)
+
+def get_hidden_path(token: str) -> str:
+    """
+    Generate deterministic hidden API path from token.
+    
+    Security Design:
+    - Salt prevents rainbow table attacks
+    - SHA256 ensures uniform distribution
+    - 16-char prefix provides 64-bit entropy
+    - Same token always produces same path (deterministic)
+    
+    Args:
+        token: The cluster secret token
+        
+    Returns:
+        Hidden path prefix (16 hex characters)
+    """
+    combined = f"{SALT}:{token}"
+    hash_val = hashlib.sha256(combined.encode()).hexdigest()
+    return hash_val[:16]
+
+
+# Compute hidden API path prefix
+PATH_PREFIX = get_hidden_path(CLUSTER_SECRET)
 
 
 def require_auth(f):
@@ -49,7 +70,7 @@ def get_container_status(name: str) -> str:
     return output.strip() if success else 'not found'
 
 
-@app.route(f'/api/{API_PATH}/status', methods=['GET'])
+@app.route(f'/{PATH_PREFIX}/api/v1/status', methods=['GET'])
 @require_auth
 def status():
     """Get node status"""
@@ -58,11 +79,11 @@ def status():
         'status': 'online',
         'domain': NODE_DOMAIN,
         'uptime': uptime.strip() if success else 'unknown',
-        'api_path': API_PATH
+        'path_prefix': PATH_PREFIX
     })
 
 
-@app.route(f'/api/{API_PATH}/services', methods=['GET'])
+@app.route(f'/{PATH_PREFIX}/api/v1/services', methods=['GET'])
 @require_auth
 def services():
     """Get all services status"""
@@ -76,7 +97,7 @@ def services():
     })
 
 
-@app.route(f'/api/{API_PATH}/restart/<service>', methods=['POST'])
+@app.route(f'/{PATH_PREFIX}/api/v1/restart/<service>', methods=['POST'])
 @require_auth
 def restart_service(service):
     """Restart a specific service"""
@@ -99,7 +120,7 @@ def restart_service(service):
     })
 
 
-@app.route(f'/api/{API_PATH}/config/<service>', methods=['GET'])
+@app.route(f'/{PATH_PREFIX}/api/v1/config/<service>', methods=['GET'])
 @require_auth
 def get_config(service):
     """Get service configuration"""
@@ -126,7 +147,7 @@ def get_config(service):
     })
 
 
-@app.route(f'/api/{API_PATH}/config/<service>', methods=['POST'])
+@app.route(f'/{PATH_PREFIX}/api/v1/config/<service>', methods=['POST'])
 @require_auth
 def update_config(service):
     """Update service configuration"""
@@ -156,7 +177,7 @@ def update_config(service):
     })
 
 
-@app.route(f'/api/{API_PATH}/logs/<service>', methods=['GET'])
+@app.route(f'/{PATH_PREFIX}/api/v1/logs/<service>', methods=['GET'])
 @require_auth
 def get_logs(service):
     """Get service logs"""
@@ -186,5 +207,5 @@ def health():
 
 if __name__ == '__main__':
     print(f"[NexusProxy Agent] Starting on domain: {NODE_DOMAIN}")
-    print(f"[NexusProxy Agent] API Path: /api/{API_PATH}/")
+    print(f"[NexusProxy Agent] Hidden API Path: /{PATH_PREFIX}/api/v1/")
     app.run(host='0.0.0.0', port=5001, debug=os.environ.get('DEBUG', False))

@@ -16,6 +16,30 @@ DATA_DIR = os.environ.get('DATA_DIR', '/data')
 CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 
+# Security: Hardcoded salt for path generation
+SALT = "NexusProxy_Secured_2024"
+
+
+def get_hidden_path(token: str) -> str:
+    """
+    Generate deterministic hidden API path from token.
+    
+    Security Design:
+    - Salt prevents rainbow table attacks
+    - SHA256 ensures uniform distribution
+    - 16-char prefix provides 64-bit entropy (sufficient for URL obscurity)
+    - Same token always produces same path (deterministic)
+    
+    Args:
+        token: The cluster secret token
+        
+    Returns:
+        Hidden path prefix (16 hex characters)
+    """
+    combined = f"{SALT}:{token}"
+    hash_val = hashlib.sha256(combined.encode()).hexdigest()
+    return hash_val[:16]
+
 
 def load_nodes():
     """Load nodes from persistent storage"""
@@ -32,18 +56,11 @@ def save_nodes(nodes):
         json.dump(nodes, f, indent=2)
 
 
-def compute_api_path(secret: str, domain: str) -> str:
-    """Compute hidden API path based on secret and domain"""
-    combined = f"{secret}:{domain}"
-    hash_value = hashlib.sha256(combined.encode()).hexdigest()
-    return hash_value[:8]
-
-
 def get_node_api_url(node: dict) -> str:
     """Get full API URL for a node"""
-    api_path = compute_api_path(CLUSTER_SECRET, node['domain'])
+    path_prefix = get_hidden_path(CLUSTER_SECRET)
     protocol = 'https' if node.get('https', True) else 'http'
-    return f"{protocol}://{node['domain']}/api/{api_path}"
+    return f"{protocol}://{node['domain']}/{path_prefix}/api/v1"
 
 
 def call_node_api(node: dict, endpoint: str, method: str = 'GET', data: dict = None):
@@ -168,12 +185,12 @@ def get_secret():
 
 @app.route('/api/compute-path', methods=['POST'])
 def compute_path():
-    """Compute API path for a domain"""
-    data = request.json
-    if not data or 'domain' not in data:
-        return jsonify({'error': 'Missing domain'}), 400
-    path = compute_api_path(CLUSTER_SECRET, data['domain'])
-    return jsonify({'path': path})
+    """Compute hidden API path"""
+    path_prefix = get_hidden_path(CLUSTER_SECRET)
+    return jsonify({
+        'path_prefix': path_prefix,
+        'full_path': f'/{path_prefix}/api/v1'
+    })
 
 
 if __name__ == '__main__':

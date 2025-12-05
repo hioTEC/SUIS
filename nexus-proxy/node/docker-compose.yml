@@ -11,7 +11,7 @@ services:
       - "443:443/udp"
     environment:
       - NODE_DOMAIN=${NODE_DOMAIN}
-      - API_PATH=${API_PATH}
+      - PATH_PREFIX=${PATH_PREFIX}
       - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
     volumes:
       - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
