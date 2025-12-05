@@ -2,6 +2,17 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.11] - 2025-12-06
+
+### Fixed
+- Fixed Master-Node status communication (services showing "not found")
+- Changed caddy container name from `sui-caddy` to `sui-gateway` in agent.py
+- Removed `cap_drop: ALL` and `read_only: true` from agent container (was blocking docker commands)
+- Fixed uptime command to use `/proc/uptime` instead of `uptime -p` (not available in container)
+- Improved uptime display format (e.g., "2d 5h 30m")
+
+---
+
 ## [1.9.10] - 2025-12-06
 
 ### Fixed

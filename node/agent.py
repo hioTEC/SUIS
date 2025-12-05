@@ -72,14 +72,14 @@ def sanitize_lines(l):
 ALLOWED_COMMANDS = {
     'restart_singbox': ['docker', 'restart', 'sui-singbox'],
     'restart_adguard': ['docker', 'restart', 'sui-adguard'],
-    'restart_caddy': ['docker', 'restart', 'sui-caddy'],
+    'restart_caddy': ['docker', 'restart', 'sui-gateway'],
     'status_singbox': ['docker', 'inspect', '-f', '{{.State.Status}}', 'sui-singbox'],
     'status_adguard': ['docker', 'inspect', '-f', '{{.State.Status}}', 'sui-adguard'],
-    'status_caddy': ['docker', 'inspect', '-f', '{{.State.Status}}', 'sui-caddy'],
+    'status_caddy': ['docker', 'inspect', '-f', '{{.State.Status}}', 'sui-gateway'],
     'logs_singbox': ['docker', 'logs', '--tail', '{lines}', 'sui-singbox'],
     'logs_adguard': ['docker', 'logs', '--tail', '{lines}', 'sui-adguard'],
-    'logs_caddy': ['docker', 'logs', '--tail', '{lines}', 'sui-caddy'],
-    'uptime': ['uptime', '-p'],
+    'logs_caddy': ['docker', 'logs', '--tail', '{lines}', 'sui-gateway'],
+    'uptime': ['cat', '/proc/uptime'],
 }
 
 
@@ -129,8 +129,24 @@ def require_auth(f):
 @require_auth
 @rate_limit(api_limiter)
 def status():
-    ok, uptime = execute_cmd('uptime')
-    return jsonify({'status': 'online', 'domain': NODE_DOMAIN, 'uptime': uptime.strip() if ok else 'unknown'})
+    ok, uptime_raw = execute_cmd('uptime')
+    uptime_str = 'unknown'
+    if ok:
+        try:
+            # /proc/uptime format: "seconds.fraction idle_seconds.fraction"
+            seconds = int(float(uptime_raw.split()[0]))
+            days, remainder = divmod(seconds, 86400)
+            hours, remainder = divmod(remainder, 3600)
+            minutes, _ = divmod(remainder, 60)
+            if days > 0:
+                uptime_str = f"{days}d {hours}h {minutes}m"
+            elif hours > 0:
+                uptime_str = f"{hours}h {minutes}m"
+            else:
+                uptime_str = f"{minutes}m"
+        except:
+            uptime_str = uptime_raw.strip()
+    return jsonify({'status': 'online', 'domain': NODE_DOMAIN, 'uptime': uptime_str})
 
 
 @app.route(f'/{PATH_PREFIX}/api/v1/services')
@@ -212,7 +228,7 @@ def update():
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.9.10'})
+    return jsonify({'version': '1.9.11'})
 
 
 @app.route('/health')

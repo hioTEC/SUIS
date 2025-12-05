@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.10"
+readonly VERSION="1.9.11"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -647,11 +647,8 @@ services:
       - CONFIG_DIR=/config
     volumes:
       - ./config:/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks: [sui-node-net]
-    read_only: true
-    tmpfs: [/tmp]
-    cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
   singbox:
     image: ghcr.io/sagernet/sing-box:latest

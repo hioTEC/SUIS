@@ -27,14 +27,9 @@ services:
       - CONFIG_DIR=/config
     volumes:
       - ./config:/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - sui-net
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
     security_opt:
       - no-new-privileges:true
 
