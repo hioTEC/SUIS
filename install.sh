@@ -97,6 +97,57 @@ detect_script_dir() {
     echo ""
 }
 
+download_source_files() {
+    log_step "Downloading source files from GitHub..."
+    local github_zip="https://github.com/pjonix/SUIS/archive/refs/heads/main.zip"
+    local tmp_dir="/tmp/sui-solo-install-$$"
+    local zip_file="${tmp_dir}/suis.zip"
+    
+    rm -rf "$tmp_dir"
+    mkdir -p "$tmp_dir"
+    
+    log_info "Downloading from: $github_zip"
+    if curl -fsSL "$github_zip" -o "$zip_file"; then
+        echo -e "  ${CHECK} Downloaded source archive"
+    else
+        log_error "Failed to download from GitHub!"
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+    
+    if [[ ! -s "$zip_file" ]]; then
+        log_error "Downloaded file is empty!"
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+    
+    if unzip -q "$zip_file" -d "$tmp_dir"; then
+        echo -e "  ${CHECK} Extracted source files"
+    else
+        log_error "Failed to extract archive!"
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+    
+    # Find extracted directory
+    local extracted_dir=""
+    for dir in "$tmp_dir"/SUIS* "$tmp_dir"/suis*; do
+        if [[ -d "$dir/master" && -d "$dir/node" ]]; then
+            extracted_dir="$dir"
+            break
+        fi
+    done
+    
+    if [[ -n "$extracted_dir" ]]; then
+        SCRIPT_DIR="$extracted_dir"
+        echo -e "  ${CHECK} Source directory: ${CYAN}${SCRIPT_DIR}${NC}"
+    else
+        log_error "Invalid archive structure!"
+        rm -rf "$tmp_dir"
+        exit 1
+    fi
+}
+
 SCRIPT_DIR="$(detect_script_dir)"
 
 #=============================================================================
@@ -444,9 +495,11 @@ main() {
     check_os
     check_root
     
-    if [[ -z "$SCRIPT_DIR" ]]; then
-         log_error "Could not detect script directory."
-         exit 1
+    # If source files not found locally, download from GitHub
+    if [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" || ! -d "${SCRIPT_DIR}/node" ]]; then
+        log_warn "Source files not found locally"
+        check_dependencies  # Need curl/unzip first
+        download_source_files
     fi
 
     collect_inputs
