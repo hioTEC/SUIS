@@ -1766,8 +1766,8 @@ SBEOF
     # Generate random password for Master panel basicauth
     local panel_user="admin"
     local panel_pass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
-    # Generate bcrypt hash using docker (caddy image has caddy hash-password)
-    local panel_hash=$(docker run --rm caddy:2-alpine caddy hash-password --plaintext "${panel_pass}" 2>/dev/null || echo "")
+    # Will generate bcrypt hash after Caddy container is running
+    local panel_hash=""
     
     generate_adguard_config
     
@@ -1786,80 +1786,12 @@ PANEL_USER=${panel_user}
 PANEL_PASS=${panel_pass}
 EOF
 
-    # Caddyfile: Internal HTTP server (receives fallback from sing-box)
-    # - Port 80: routes by Host header to Master or Node services
-    # - No external port binding (sing-box owns 80/443 on host)
-    # - Master panel protected by basicauth
-    if [[ -n "$panel_hash" ]]; then
-        cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
+    # Caddyfile: Initial config (basicauth will be added after container starts)
+    cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
 {
-    # No auto HTTPS - sing-box handles TLS on 443
     auto_https off
 }
 
-# Internal fallback handler (receives decrypted traffic from sing-box)
-:80 {
-    @master host ${master_domain}
-    handle @master {
-        # Basic authentication for Master panel
-        basicauth {
-            ${panel_user} ${panel_hash}
-        }
-        reverse_proxy sui-master:5000
-    }
-    
-    @node host ${node_domain}
-    handle @node {
-        # Hidden API path for agent
-        handle /${path_prefix}/api/v1/* {
-            reverse_proxy sui-agent:5001
-        }
-        
-        # AdGuard Home Web UI
-        handle /adguard/* {
-            uri strip_prefix /adguard
-            reverse_proxy sui-adguard:3000
-        }
-        
-        # Health check
-        handle /health {
-            reverse_proxy sui-agent:5001
-        }
-        
-        # Default camouflage page
-        handle {
-            root * /usr/share/caddy
-            file_server
-            try_files {path} /index.html
-        }
-    }
-    
-    # Default fallback
-    handle {
-        respond "Not Found" 404
-    }
-    
-    header {
-        -Server
-        X-Content-Type-Options "nosniff"
-    }
-    
-    log {
-        output file /var/log/caddy/access.log
-        level ERROR
-    }
-}
-CADDYEOF
-    else
-        # Fallback without basicauth if hash generation failed
-        log_warn "Could not generate bcrypt hash, Master panel will not have password protection"
-        cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
-{
-    # No auto HTTPS - sing-box handles TLS on 443
-    auto_https off
-}
-
-# Internal fallback handler (receives decrypted traffic from sing-box)
 :80 {
     @master host ${master_domain}
     handle @master {
@@ -1868,23 +1800,16 @@ CADDYEOF
     
     @node host ${node_domain}
     handle @node {
-        # Hidden API path for agent
         handle /${path_prefix}/api/v1/* {
             reverse_proxy sui-agent:5001
         }
-        
-        # AdGuard Home Web UI
         handle /adguard/* {
             uri strip_prefix /adguard
             reverse_proxy sui-adguard:3000
         }
-        
-        # Health check
         handle /health {
             reverse_proxy sui-agent:5001
         }
-        
-        # Default camouflage page
         handle {
             root * /usr/share/caddy
             file_server
@@ -1892,23 +1817,17 @@ CADDYEOF
         }
     }
     
-    # Default fallback
     handle {
         respond "Not Found" 404
     }
     
-    header {
-        -Server
-        X-Content-Type-Options "nosniff"
-    }
-    
+    header -Server
     log {
         output file /var/log/caddy/access.log
         level ERROR
     }
 }
 CADDYEOF
-    fi
 
     # Create camouflage site
     cat > "$NODE_INSTALL_DIR/config/caddy/site/index.html" << 'SITEEOF'
@@ -1938,6 +1857,64 @@ SITEEOF
     cd "$NODE_INSTALL_DIR"
     docker compose up -d --build
     echo -e "  ${CHECK} Node containers started (sing-box + Caddy + Agent + AdGuard)"
+    
+    # Generate bcrypt hash using running Caddy container (no extra pull needed)
+    sleep 2
+    log_info "Generating basicauth credentials..."
+    panel_hash=$(docker exec sui-caddy caddy hash-password --plaintext "${panel_pass}" 2>/dev/null || echo "")
+    
+    if [[ -n "$panel_hash" ]]; then
+        # Update Caddyfile with basicauth
+        cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
+{
+    auto_https off
+}
+
+:80 {
+    @master host ${master_domain}
+    handle @master {
+        basicauth {
+            ${panel_user} ${panel_hash}
+        }
+        reverse_proxy sui-master:5000
+    }
+    
+    @node host ${node_domain}
+    handle @node {
+        handle /${path_prefix}/api/v1/* {
+            reverse_proxy sui-agent:5001
+        }
+        handle /adguard/* {
+            uri strip_prefix /adguard
+            reverse_proxy sui-adguard:3000
+        }
+        handle /health {
+            reverse_proxy sui-agent:5001
+        }
+        handle {
+            root * /usr/share/caddy
+            file_server
+            try_files {path} /index.html
+        }
+    }
+    
+    handle {
+        respond "Not Found" 404
+    }
+    
+    header -Server
+    log {
+        output file /var/log/caddy/access.log
+        level ERROR
+    }
+}
+CADDYEOF
+        # Reload Caddy config
+        docker exec sui-caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true
+        echo -e "  ${CHECK} Master panel basicauth enabled"
+    else
+        log_warn "Could not generate bcrypt hash, Master panel has no password protection"
+    fi
     
     # Wait for ACME certificates
     log_info "Waiting for TLS certificates (this may take 1-2 minutes)..."
