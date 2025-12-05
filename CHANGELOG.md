@@ -2,48 +2,20 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
-## [1.8.3] - 2025-12-06
-
-### Fixed
-- Simplified select_language function to prevent script exit
-- Added explicit `return 0` to ensure function completes successfully
-- Improved read command fallback when tty read fails
-
----
-
-## [1.8.2] - 2025-12-06
-
-### Fixed
-- Fixed language selection causing script to exit when tty not available
-- Added error handling for read command in select_language function
-
----
-
-## [1.8.1] - 2025-12-06
-
-### Fixed
-- Fixed installation script exiting after language selection
-- Language selection now only appears in interactive mode (no CLI args)
-- CLI mode (`--master`, `--node`) now auto-detects language from system
-
----
-
-## [1.8.0] - 2025-12-06
-
-### Added
-- **Multi-language Support**: Installation script now supports English and Chinese
-- **Language Selector**: Choose language at the start of installation
-- **UI Language Toggle**: Dashboard now has EN/中文 switch button
-- **i18n System**: All UI text can be switched between languages
+## [1.9.0] - 2025-12-06
 
 ### Changed
-- Separated README.md (English) and README_CN.md (Chinese)
-- Removed `--reinstall` command (use `--uninstall` + reinstall instead)
-- Simplified CLI options: `--master`, `--node`, `--both`, `--uninstall`, `--help`
-- Updated all 2024 references to 2025
+- Simplified installation script to English-only
+- Simplified dashboard to English-only
+- Removed i18n system and language selection (was causing script exit issues)
+- Cleaner, more maintainable codebase
 
 ### Removed
-- Removed redundant `--reinstall` functionality
+- Removed Chinese language support from install script
+- Removed `MSG_EN`, `MSG_ZH` arrays and `msg()` function
+- Removed `select_language()` function
+- Removed language toggle button from dashboard
+- Removed `README_CN.md` (Chinese documentation)
 
 ---
 

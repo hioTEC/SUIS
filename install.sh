@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.8.3"
+readonly VERSION="1.9.0"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -42,234 +42,12 @@ readonly ARROW="${CYAN}➜${NC}"
 # Global
 SHARED_CADDY_MODE=false
 INSTALL_MODE=""
-LANG_CODE="en"
+CLI_MODE=""
 domain=""
 master_domain=""
 node_domain=""
 email=""
 secret=""
-
-#=============================================================================
-# I18N - Internationalization
-#=============================================================================
-declare -A MSG_EN MSG_ZH
-
-# English messages
-MSG_EN=(
-    [select_lang]="Select language / 选择语言:"
-    [lang_en]="English"
-    [lang_zh]="中文"
-    [downloading]="Downloading source files from GitHub..."
-    [download_from]="Downloading from"
-    [downloaded]="Downloaded source archive"
-    [extracted]="Extracted source files"
-    [source_dir]="Source directory"
-    [download_failed]="Failed to download from GitHub!"
-    [empty_file]="Downloaded file is empty!"
-    [extract_failed]="Failed to extract archive!"
-    [invalid_archive]="Invalid archive structure!"
-    [checking_deps]="Checking Dependencies..."
-    [installing_deps]="Installing"
-    [install_docker]="Installing Docker..."
-    [docker_mac_error]="Please install Docker Desktop for Mac manually."
-    [no_pkg_mgr]="No package manager. Please install"
-    [root_required]="This script must be run as root on Linux!"
-    [macos_warn]="Running as non-root on macOS. Ensure Docker permissions."
-    [config_setup]="Configuration Setup"
-    [select_mode]="Select installation mode:"
-    [mode_master]="Master (Control Panel)"
-    [mode_node]="Node (Proxy Agent)"
-    [enter_choice]="Enter choice"
-    [invalid_choice]="Invalid choice"
-    [reading_env]="Reading defaults from existing .env..."
-    [config_hint]="Configuration (Press Enter for default)"
-    [enter_domain]="Enter Domain"
-    [enter_email]="Enter Email"
-    [enter_secret]="Enter Cluster Secret"
-    [found_existing]="found existing"
-    [secret_required]="Secret is required!"
-    [adguard_config]="AdGuard Home will be configured with"
-    [summary]="Summary:"
-    [mode]="Mode"
-    [proceed]="Proceed?"
-    [cancelled]="Cancelled"
-    [port_in_use]="Port %s is in use."
-    [port_options]="Options:"
-    [port_kill]="Kill processes and continue"
-    [port_continue]="Continue anyway (may fail)"
-    [port_cancel]="Cancel"
-    [select]="Select"
-    [killing_port]="Killing process on port"
-    [port_free_failed]="Failed to free port"
-    [ports_freed]="Ports freed successfully"
-    [continue_busy]="Continuing with busy ports..."
-    [creating_networks]="Creating Docker networks..."
-    [existing_master]="Existing Master installation detected!"
-    [existing_node]="Existing Node installation detected!"
-    [overwrite]="Overwrite (update domain/settings)"
-    [cancel]="Cancel"
-    [stopping_containers]="Stopping existing containers..."
-    [installing_master]="Installing Master..."
-    [installing_node]="Installing Node..."
-    [master_detected]="Master detected - using shared gateway mode"
-    [setup_gateway]="Setting up Shared Gateway (Caddy)..."
-    [gateway_created]="Gateway docker-compose created"
-    [gen_caddyfile]="Generating shared Caddyfile..."
-    [added_master]="Added Master"
-    [added_node]="Added Node"
-    [starting_gateway]="Starting shared gateway..."
-    [reloading_gateway]="Reloading gateway configuration..."
-    [gen_adguard]="Generating AdGuard Config..."
-    [adguard_created]="AdGuard config created. Setup Wizard available at /adguard/"
-    [master_installed]="Master Installed!"
-    [node_installed]="Node Installed!"
-    [save_secret]="CLUSTER SECRET (Save this! Required for node installation)"
-    [control_panel]="Control Panel"
-    [node_url]="Node URL"
-    [adguard_home]="AdGuard Home"
-    [api_path]="API Path"
-    [uninstall_title]="Uninstall"
-    [select_uninstall]="Select component to uninstall:"
-    [master_only]="Master only"
-    [node_only]="Node only"
-    [everything]="Everything"
-    [confirm_remove_master]="Remove Master and all its data?"
-    [confirm_remove_node]="Remove Node and all its data?"
-    [confirm_remove_all]="Remove ALL SUI Solo components and data?"
-    [master_uninstalled]="Master uninstalled!"
-    [node_uninstalled]="Node uninstalled!"
-    [all_uninstalled]="All SUI Solo components uninstalled!"
-    [master_not_installed]="Master not installed"
-    [node_not_installed]="Node not installed"
-    [install_both]="Installing Master + Node on same server"
-    [master_config]="Master Configuration"
-    [node_config]="Node Configuration"
-    [enter_master_domain]="Enter Master Domain"
-    [enter_node_domain]="Enter Node Domain"
-    [both_installed]="Both Master and Node installed successfully!"
-    [master_panel]="Master Panel"
-    [source_not_found]="Source files not found locally"
-    [help_usage]="Usage: sudo %s [OPTION]"
-    [help_options]="Options:"
-    [help_master]="Install Master (Control Panel)"
-    [help_node]="Install Node (Proxy Agent)"
-    [help_both]="Install Master + Node on same server"
-    [help_uninstall]="Uninstall SUI Solo"
-    [help_help]="Show this help"
-)
-
-# Chinese messages
-MSG_ZH=(
-    [select_lang]="Select language / 选择语言:"
-    [lang_en]="English"
-    [lang_zh]="中文"
-    [downloading]="正在从 GitHub 下载源文件..."
-    [download_from]="下载地址"
-    [downloaded]="已下载源文件压缩包"
-    [extracted]="已解压源文件"
-    [source_dir]="源文件目录"
-    [download_failed]="从 GitHub 下载失败！"
-    [empty_file]="下载的文件为空！"
-    [extract_failed]="解压失败！"
-    [invalid_archive]="压缩包结构无效！"
-    [checking_deps]="正在检查依赖..."
-    [installing_deps]="正在安装"
-    [install_docker]="正在安装 Docker..."
-    [docker_mac_error]="请手动安装 Docker Desktop for Mac。"
-    [no_pkg_mgr]="未找到包管理器，请手动安装"
-    [root_required]="此脚本需要 root 权限运行！"
-    [macos_warn]="在 macOS 上以非 root 运行，请确保有 Docker 权限。"
-    [config_setup]="配置设置"
-    [select_mode]="选择安装模式："
-    [mode_master]="主控 (控制面板)"
-    [mode_node]="节点 (代理服务)"
-    [enter_choice]="输入选项"
-    [invalid_choice]="无效选项"
-    [reading_env]="正在读取现有 .env 配置..."
-    [config_hint]="配置信息 (按回车使用默认值)"
-    [enter_domain]="输入域名"
-    [enter_email]="输入邮箱"
-    [enter_secret]="输入集群密钥"
-    [found_existing]="已找到现有配置"
-    [secret_required]="密钥不能为空！"
-    [adguard_config]="AdGuard Home 将使用以下配置"
-    [summary]="配置摘要："
-    [mode]="模式"
-    [proceed]="确认继续？"
-    [cancelled]="已取消"
-    [port_in_use]="端口 %s 已被占用。"
-    [port_options]="选项："
-    [port_kill]="终止进程并继续"
-    [port_continue]="继续安装 (可能失败)"
-    [port_cancel]="取消"
-    [select]="选择"
-    [killing_port]="正在终止端口上的进程"
-    [port_free_failed]="无法释放端口"
-    [ports_freed]="端口已成功释放"
-    [continue_busy]="继续安装 (端口仍被占用)..."
-    [creating_networks]="正在创建 Docker 网络..."
-    [existing_master]="检测到已有主控安装！"
-    [existing_node]="检测到已有节点安装！"
-    [overwrite]="覆盖安装 (更新域名/设置)"
-    [cancel]="取消"
-    [stopping_containers]="正在停止现有容器..."
-    [installing_master]="正在安装主控..."
-    [installing_node]="正在安装节点..."
-    [master_detected]="检测到主控 - 使用共享网关模式"
-    [setup_gateway]="正在设置共享网关 (Caddy)..."
-    [gateway_created]="网关 docker-compose 已创建"
-    [gen_caddyfile]="正在生成共享 Caddyfile..."
-    [added_master]="已添加主控"
-    [added_node]="已添加节点"
-    [starting_gateway]="正在启动共享网关..."
-    [reloading_gateway]="正在重载网关配置..."
-    [gen_adguard]="正在生成 AdGuard 配置..."
-    [adguard_created]="AdGuard 配置已创建，设置向导地址: /adguard/"
-    [master_installed]="主控安装完成！"
-    [node_installed]="节点安装完成！"
-    [save_secret]="集群密钥 (请保存！安装节点时需要)"
-    [control_panel]="控制面板"
-    [node_url]="节点地址"
-    [adguard_home]="AdGuard Home"
-    [api_path]="API 路径"
-    [uninstall_title]="卸载"
-    [select_uninstall]="选择要卸载的组件："
-    [master_only]="仅主控"
-    [node_only]="仅节点"
-    [everything]="全部"
-    [confirm_remove_master]="确认删除主控及其所有数据？"
-    [confirm_remove_node]="确认删除节点及其所有数据？"
-    [confirm_remove_all]="确认删除所有 SUI Solo 组件和数据？"
-    [master_uninstalled]="主控已卸载！"
-    [node_uninstalled]="节点已卸载！"
-    [all_uninstalled]="所有 SUI Solo 组件已卸载！"
-    [master_not_installed]="主控未安装"
-    [node_not_installed]="节点未安装"
-    [install_both]="正在同时安装主控和节点"
-    [master_config]="主控配置"
-    [node_config]="节点配置"
-    [enter_master_domain]="输入主控域名"
-    [enter_node_domain]="输入节点域名"
-    [both_installed]="主控和节点安装成功！"
-    [master_panel]="主控面板"
-    [source_not_found]="本地未找到源文件"
-    [help_usage]="用法: sudo %s [选项]"
-    [help_options]="选项："
-    [help_master]="安装主控 (控制面板)"
-    [help_node]="安装节点 (代理服务)"
-    [help_both]="同时安装主控和节点"
-    [help_uninstall]="卸载 SUI Solo"
-    [help_help]="显示帮助信息"
-)
-
-msg() {
-    local key="$1"
-    if [[ "$LANG_CODE" == "zh" ]]; then
-        echo "${MSG_ZH[$key]:-$key}"
-    else
-        echo "${MSG_EN[$key]:-$key}"
-    fi
-}
 
 #=============================================================================
 # UTILS
@@ -297,27 +75,8 @@ EOF
     echo -e "${NC}"
 }
 
-select_language() {
-    # Skip if /dev/tty not available
-    [[ ! -e /dev/tty ]] && return 0
-    
-    echo ""
-    echo "  $(msg select_lang)"
-    echo "    1) $(msg lang_en)"
-    echo "    2) $(msg lang_zh)"
-    echo ""
-    
-    local lang_choice=""
-    read -r -p "  [1-2]: " lang_choice < /dev/tty 2>/dev/null || lang_choice="1"
-    case $lang_choice in
-        2) LANG_CODE="zh" ;;
-        *) LANG_CODE="en" ;;
-    esac
-    return 0
-}
-
 confirm() {
-    local prompt="${1:-$(msg proceed)}"
+    local prompt="${1:-Proceed?}"
     local default="${2:-n}"
     [[ "$default" == "y" ]] && prompt="$prompt [Y/n]: " || prompt="$prompt [y/N]: "
     read -r -p "$prompt" response < /dev/tty
@@ -335,26 +94,26 @@ detect_script_dir() {
 }
 
 download_source_files() {
-    log_step "$(msg downloading)"
+    log_step "Downloading source files from GitHub..."
     local github_zip="https://github.com/pjonix/SUIS/archive/refs/heads/main.zip"
     local tmp_dir="/tmp/sui-solo-install-$$"
     local zip_file="${tmp_dir}/suis.zip"
     
     rm -rf "$tmp_dir" && mkdir -p "$tmp_dir"
     
-    log_info "$(msg download_from): $github_zip"
+    log_info "Downloading from: $github_zip"
     if curl -fsSL "$github_zip" -o "$zip_file"; then
-        echo -e "  ${CHECK} $(msg downloaded)"
+        echo -e "  ${CHECK} Downloaded source archive"
     else
-        log_error "$(msg download_failed)"; rm -rf "$tmp_dir"; exit 1
+        log_error "Failed to download from GitHub!"; rm -rf "$tmp_dir"; exit 1
     fi
     
-    [[ ! -s "$zip_file" ]] && { log_error "$(msg empty_file)"; rm -rf "$tmp_dir"; exit 1; }
+    [[ ! -s "$zip_file" ]] && { log_error "Downloaded file is empty!"; rm -rf "$tmp_dir"; exit 1; }
     
     if unzip -q "$zip_file" -d "$tmp_dir"; then
-        echo -e "  ${CHECK} $(msg extracted)"
+        echo -e "  ${CHECK} Extracted source files"
     else
-        log_error "$(msg extract_failed)"; rm -rf "$tmp_dir"; exit 1
+        log_error "Failed to extract archive!"; rm -rf "$tmp_dir"; exit 1
     fi
     
     local extracted_dir=""
@@ -364,9 +123,9 @@ download_source_files() {
     
     if [[ -n "$extracted_dir" ]]; then
         SCRIPT_DIR="$extracted_dir"
-        echo -e "  ${CHECK} $(msg source_dir): ${CYAN}${SCRIPT_DIR}${NC}"
+        echo -e "  ${CHECK} Source directory: ${CYAN}${SCRIPT_DIR}${NC}"
     else
-        log_error "$(msg invalid_archive)"; rm -rf "$tmp_dir"; exit 1
+        log_error "Invalid archive structure!"; rm -rf "$tmp_dir"; exit 1
     fi
 }
 
@@ -383,14 +142,14 @@ check_os() {
 
 check_root() {
     if [[ "$OS_TYPE" == "macos" ]]; then
-        [[ "$(id -u)" -ne 0 ]] && log_warn "$(msg macos_warn)"
+        [[ "$(id -u)" -ne 0 ]] && log_warn "Running as non-root on macOS. Ensure Docker permissions."
     else
-        [[ "$(id -u)" -ne 0 ]] && { log_error "$(msg root_required)"; exit 1; }
+        [[ "$(id -u)" -ne 0 ]] && { log_error "This script must be run as root on Linux!"; exit 1; }
     fi
 }
 
 check_dependencies() {
-    log_step "$(msg checking_deps)"
+    log_step "Checking Dependencies..."
     local missing=() pkg_mgr=""
     
     command -v brew &>/dev/null && pkg_mgr="brew"
@@ -406,27 +165,26 @@ check_dependencies() {
     [[ "$OS_TYPE" == "linux" ]] && ! command -v ss &>/dev/null && missing+=("iproute2")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-        log_info "$(msg installing_deps): ${missing[*]}"
+        log_info "Installing: ${missing[*]}"
         case "$pkg_mgr" in
             brew) brew install "${missing[@]}" ;;
             apt)  apt-get update -qq && apt-get install -y -qq "${missing[@]}" ;;
             yum)  yum install -y "${missing[@]}" ;;
             apk)  apk add "${missing[@]}" ;;
-            *)    log_error "$(msg no_pkg_mgr): ${missing[*]}"; exit 1 ;;
+            *)    log_error "No package manager. Please install: ${missing[*]}"; exit 1 ;;
         esac
     fi
     
     if ! command -v docker &>/dev/null; then
         if [[ "$OS_TYPE" == "macos" ]]; then
-            log_error "$(msg docker_mac_error)"; exit 1
+            log_error "Please install Docker Desktop for Mac manually."; exit 1
         else
-            log_info "$(msg install_docker)"
+            log_info "Installing Docker..."
             curl -fsSL https://get.docker.com | sh
             systemctl enable docker && systemctl start docker
         fi
     fi
 }
-
 
 #=============================================================================
 # HELPERS
@@ -443,7 +201,7 @@ check_port() {
 
 kill_port_process() {
     local port=$1
-    log_info "$(msg killing_port) $port..."
+    log_info "Killing process on port $port..."
     if [[ "$OS_TYPE" == "macos" ]]; then
         local pid=$(lsof -ti :$port 2>/dev/null)
         [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null
@@ -458,27 +216,27 @@ kill_port_process() {
 check_ports_avail() {
     local ports=("$@") blocked=()
     for p in "${ports[@]}"; do
-        check_port "$p" || { blocked+=("$p"); log_warn "$(printf "$(msg port_in_use)" "$p")"; }
+        check_port "$p" || { blocked+=("$p"); log_warn "Port $p is in use."; }
     done
     if [[ ${#blocked[@]} -gt 0 ]]; then
         echo ""
-        echo "  $(msg port_options)"
-        echo "    1) $(msg port_kill)"
-        echo "    2) $(msg port_continue)"
-        echo "    3) $(msg port_cancel)"
+        echo "  Options:"
+        echo "    1) Kill processes and continue"
+        echo "    2) Continue anyway (may fail)"
+        echo "    3) Cancel"
         echo ""
-        read -r -p "  $(msg select) [1-3]: " choice < /dev/tty
+        read -r -p "  Select [1-3]: " choice < /dev/tty
         case $choice in
             1)
                 for p in "${blocked[@]}"; do kill_port_process "$p"; done
                 for p in "${blocked[@]}"; do
-                    check_port "$p" || { log_error "$(msg port_free_failed) $p"; exit 1; }
+                    check_port "$p" || { log_error "Failed to free port $p"; exit 1; }
                 done
-                log_success "$(msg ports_freed)"
+                log_success "Ports freed successfully"
                 ;;
-            2) log_warn "$(msg continue_busy)" ;;
-            3) log_info "$(msg cancelled)"; exit 0 ;;
-            *) log_error "$(msg invalid_choice)"; exit 1 ;;
+            2) log_warn "Continuing with busy ports..." ;;
+            3) log_info "Cancelled"; exit 0 ;;
+            *) log_error "Invalid choice"; exit 1 ;;
         esac
     fi
 }
@@ -491,13 +249,13 @@ check_node_exists() { [[ -d "$NODE_INSTALL_DIR" && -f "$NODE_INSTALL_DIR/.env" ]
 check_gateway_exists() { [[ -d "$GATEWAY_DIR" && -f "$GATEWAY_DIR/docker-compose.yml" ]]; }
 
 create_docker_networks() {
-    log_info "$(msg creating_networks)"
+    log_info "Creating Docker networks..."
     docker network create sui-master-net 2>/dev/null || true
     docker network create sui-node-net 2>/dev/null || true
 }
 
 setup_shared_gateway() {
-    log_step "$(msg setup_gateway)"
+    log_step "Setting up Shared Gateway (Caddy)..."
     mkdir -p "$GATEWAY_DIR"
     cat > "$GATEWAY_DIR/docker-compose.yml" << 'EOF'
 version: '3.8'
@@ -528,11 +286,11 @@ networks:
   sui-node-net:
     external: true
 EOF
-    echo -e "  ${CHECK} $(msg gateway_created)"
+    echo -e "  ${CHECK} Gateway docker-compose created"
 }
 
 generate_shared_caddyfile() {
-    log_info "$(msg gen_caddyfile)"
+    log_info "Generating shared Caddyfile..."
     local caddyfile="$GATEWAY_DIR/Caddyfile"
     local m_domain="" n_domain="" n_path_prefix="" acme_email="${email:-admin@example.com}"
     
@@ -564,7 +322,7 @@ ${m_domain} {
     log { output file /var/log/caddy/master.log }
 }
 EOF
-        echo -e "  ${CHECK} $(msg added_master): ${m_domain}"
+        echo -e "  ${CHECK} Added Master: ${m_domain}"
     }
     
     [[ -n "$n_domain" && -n "$n_path_prefix" ]] && {
@@ -579,17 +337,17 @@ ${n_domain} {
     log { output file /var/log/caddy/node.log }
 }
 EOF
-        echo -e "  ${CHECK} $(msg added_node): ${n_domain}"
+        echo -e "  ${CHECK} Added Node: ${n_domain}"
     }
 }
 
 start_shared_gateway() {
-    log_info "$(msg starting_gateway)"
+    log_info "Starting shared gateway..."
     cd "$GATEWAY_DIR" && docker compose up -d
 }
 
 reload_shared_gateway() {
-    log_info "$(msg reloading_gateway)"
+    log_info "Reloading gateway configuration..."
     docker exec sui-gateway caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || \
         (cd "$GATEWAY_DIR" && docker compose restart)
 }
@@ -598,7 +356,7 @@ generate_adguard_config() {
     local conf_file="$NODE_INSTALL_DIR/config/adguard/conf/AdGuardHome.yaml"
     mkdir -p "$(dirname "$conf_file")"
     [[ -f "$conf_file" ]] && return
-    log_info "$(msg gen_adguard)"
+    log_info "Generating AdGuard Config..."
     cat > "$conf_file" << EOF
 bind_host: 0.0.0.0
 bind_port: 3000
@@ -608,7 +366,7 @@ dns:
   bind_hosts: [0.0.0.0]
   port: 53
 EOF
-    log_info "$(msg adguard_created)"
+    log_info "AdGuard config created. Setup Wizard available at /adguard/"
 }
 
 
@@ -618,7 +376,7 @@ EOF
 load_env_defaults() {
     local env_file="$1"
     [[ -f "$env_file" ]] && {
-        log_info "$(msg reading_env)"
+        log_info "Reading defaults from existing .env..."
         local s=$(grep '^CLUSTER_SECRET=' "$env_file" | cut -d= -f2)
         local d=$(grep '^MASTER_DOMAIN=' "$env_file" | cut -d= -f2)
         local nd=$(grep '^NODE_DOMAIN=' "$env_file" | cut -d= -f2)
@@ -631,20 +389,20 @@ load_env_defaults() {
 }
 
 collect_inputs() {
-    log_step "$(msg config_setup)"
+    log_step "Configuration Setup"
     echo ""
 
     if [[ -n "$CLI_MODE" ]]; then
         INSTALL_MODE="$CLI_MODE"
     else
-        echo "  $(msg select_mode)"
-        echo "    1) $(msg mode_master)"
-        echo "    2) $(msg mode_node)"
-        read -r -p "  $(msg enter_choice) [1-2]: " mode_choice < /dev/tty
+        echo "  Select installation mode:"
+        echo "    1) Master (Control Panel)"
+        echo "    2) Node (Proxy Agent)"
+        read -r -p "  Enter choice [1-2]: " mode_choice < /dev/tty
         case $mode_choice in
             1) INSTALL_MODE="master" ;;
             2) INSTALL_MODE="node" ;;
-            *) log_error "$(msg invalid_choice)"; exit 1 ;;
+            *) log_error "Invalid choice"; exit 1 ;;
         esac
     fi
     
@@ -653,26 +411,26 @@ collect_inputs() {
     load_env_defaults "$target_dir/.env"
 
     echo ""
-    log_info "$(msg config_hint)"
+    log_info "Configuration (Press Enter for default)"
     
     local d_domain="${domain:-localhost}"
-    read -r -p "  $(msg enter_domain) [${d_domain}]: " in_domain < /dev/tty
+    read -r -p "  Enter Domain [${d_domain}]: " in_domain < /dev/tty
     domain=${in_domain:-$d_domain}
     domain=$(echo "$domain" | sed 's|https://||g' | sed 's|http://||g' | tr -d '/')
 
     local d_email="${email:-admin@example.com}"
-    read -r -p "  $(msg enter_email) [${d_email}]: " in_email < /dev/tty
+    read -r -p "  Enter Email [${d_email}]: " in_email < /dev/tty
     email=${in_email:-$d_email}
 
     if [[ "$INSTALL_MODE" == "node" ]]; then
-        local p_secret="$(msg enter_secret)"
-        [[ -n "$secret" ]] && p_secret="$p_secret [$(msg found_existing)]"
+        local p_secret="Enter Cluster Secret"
+        [[ -n "$secret" ]] && p_secret="$p_secret [found existing]"
         while [[ -z "$secret" ]]; do
             read -r -p "  $p_secret: " in_secret < /dev/tty
             [[ -n "$in_secret" ]] && secret="$in_secret"
-            [[ -z "$secret" ]] && log_error "$(msg secret_required)"
+            [[ -z "$secret" ]] && log_error "Secret is required!"
         done
-        log_info "$(msg adguard_config): User: admin | Pass: sui-solo"
+        log_info "AdGuard Home will be configured with: User: admin | Pass: sui-solo"
     else
         [[ -z "$secret" ]] && {
             command -v openssl &>/dev/null && secret=$(openssl rand -hex 32) || \
@@ -681,30 +439,30 @@ collect_inputs() {
     fi
 
     echo ""
-    log_info "$(msg summary)"
-    echo -e "  $(msg mode):   ${BOLD}${INSTALL_MODE^^}${NC}"
+    log_info "Summary:"
+    echo -e "  Mode:   ${BOLD}${INSTALL_MODE^^}${NC}"
     echo -e "  Domain: ${BOLD}${domain}${NC}"
     echo -e "  Email:  ${BOLD}${email}${NC}"
     echo ""
-    confirm "$(msg proceed)" "y" || exit 0
+    confirm "Proceed?" "y" || exit 0
 }
 
 #=============================================================================
 # INSTALL
 #=============================================================================
 install_master() {
-    log_step "$(msg installing_master)"
+    log_step "Installing Master..."
     
     if [[ -d "$MASTER_INSTALL_DIR" ]]; then
-        log_warn "$(msg existing_master)"
+        log_warn "Existing Master installation detected!"
         echo ""
-        echo "    1) $(msg overwrite)"
-        echo "    2) $(msg cancel)"
-        read -r -p "  $(msg select) [1-2]: " choice < /dev/tty
+        echo "    1) Overwrite (update domain/settings)"
+        echo "    2) Cancel"
+        read -r -p "  Select [1-2]: " choice < /dev/tty
         case $choice in
-            1) log_info "$(msg stopping_containers)"; cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
+            1) log_info "Stopping existing containers..."; cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
                [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down 2>/dev/null || true ;;
-            *) log_info "$(msg cancelled)"; exit 0 ;;
+            *) log_info "Cancelled"; exit 0 ;;
         esac
     fi
     
@@ -747,30 +505,30 @@ EOF
     start_shared_gateway
     
     echo ""
-    log_success "$(msg master_installed)"
+    log_success "Master Installed!"
     echo ""
     echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}  ${BOLD}$(msg save_secret)${NC}  ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${BOLD}CLUSTER SECRET (Save this! Required for node installation)${NC}  ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${MAGENTA}║${NC}  ${YELLOW}${secret}${NC}  ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${ARROW} $(msg control_panel): ${CYAN}https://${domain}${NC}"
+    echo -e "  ${ARROW} Control Panel: ${CYAN}https://${domain}${NC}"
     echo ""
 }
 
 install_node() {
-    log_step "$(msg installing_node)"
+    log_step "Installing Node..."
     
     if [[ -d "$NODE_INSTALL_DIR" ]]; then
-        log_warn "$(msg existing_node)"
+        log_warn "Existing Node installation detected!"
         echo ""
-        echo "    1) $(msg overwrite)"
-        echo "    2) $(msg cancel)"
-        read -r -p "  $(msg select) [1-2]: " choice < /dev/tty
+        echo "    1) Overwrite (update domain/settings)"
+        echo "    2) Cancel"
+        read -r -p "  Select [1-2]: " choice < /dev/tty
         case $choice in
-            1) log_info "$(msg stopping_containers)"; cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true ;;
-            *) log_info "$(msg cancelled)"; exit 0 ;;
+            1) log_info "Stopping existing containers..."; cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true ;;
+            *) log_info "Cancelled"; exit 0 ;;
         esac
     fi
     
@@ -778,7 +536,7 @@ install_node() {
     
     if check_master_exists || check_gateway_exists; then
         SHARED_CADDY_MODE=true
-        log_info "$(msg master_detected)"
+        log_info "Master detected - using shared gateway mode"
     else
         check_ports_avail 80 443
     fi
@@ -858,70 +616,68 @@ EOF
     fi
     
     echo ""
-    log_success "$(msg node_installed)"
+    log_success "Node Installed!"
     echo ""
-    echo -e "  ${ARROW} $(msg node_url):     ${CYAN}https://${domain}${NC}"
-    echo -e "  ${ARROW} $(msg adguard_home): ${CYAN}https://${domain}/adguard/${NC}"
-    echo -e "  ${ARROW} $(msg api_path):     ${CYAN}/${path_prefix}/api/v1/${NC}"
+    echo -e "  ${ARROW} Node URL:     ${CYAN}https://${domain}${NC}"
+    echo -e "  ${ARROW} AdGuard Home: ${CYAN}https://${domain}/adguard/${NC}"
+    echo -e "  ${ARROW} API Path:     ${CYAN}/${path_prefix}/api/v1/${NC}"
     echo ""
 }
-
 
 #=============================================================================
 # UNINSTALL
 #=============================================================================
 uninstall() {
     print_banner
-    select_language
-    log_step "$(msg uninstall_title) ${PROJECT_NAME}"
+    log_step "Uninstall ${PROJECT_NAME}"
     echo ""
-    echo "  $(msg select_uninstall)"
-    echo "    1) $(msg master_only)"
-    echo "    2) $(msg node_only)"
-    echo "    3) $(msg everything)"
-    echo "    4) $(msg cancel)"
+    echo "  Select component to uninstall:"
+    echo "    1) Master only"
+    echo "    2) Node only"
+    echo "    3) Everything"
+    echo "    4) Cancel"
     echo ""
     read -r -p "  [1-4]: " choice < /dev/tty
     
     case $choice in
         1)
             if [[ -d "$MASTER_INSTALL_DIR" ]]; then
-                confirm "$(msg confirm_remove_master)" "n" || exit 0
-                log_info "$(msg stopping_containers)"
+                confirm "Remove Master and all its data?" "n" || exit 0
+                log_info "Stopping existing containers..."
                 cd "$MASTER_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
                 rm -rf "$MASTER_INSTALL_DIR"
                 check_node_exists && check_gateway_exists && { generate_shared_caddyfile; reload_shared_gateway; } || \
                     { [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down -v 2>/dev/null; rm -rf "$GATEWAY_DIR"; }
-                log_success "$(msg master_uninstalled)"
+                log_success "Master uninstalled!"
             else
-                log_warn "$(msg master_not_installed)"
+                log_warn "Master not installed"
             fi
             ;;
         2)
             if [[ -d "$NODE_INSTALL_DIR" ]]; then
-                confirm "$(msg confirm_remove_node)" "n" || exit 0
-                log_info "$(msg stopping_containers)"
+                confirm "Remove Node and all its data?" "n" || exit 0
+                log_info "Stopping existing containers..."
                 cd "$NODE_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
                 rm -rf "$NODE_INSTALL_DIR"
                 check_master_exists && check_gateway_exists && { generate_shared_caddyfile; reload_shared_gateway; } || \
                     { [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down -v 2>/dev/null; rm -rf "$GATEWAY_DIR"; }
-                log_success "$(msg node_uninstalled)"
+                log_success "Node uninstalled!"
             else
-                log_warn "$(msg node_not_installed)"
+                log_warn "Node not installed"
             fi
             ;;
         3)
-            confirm "$(msg confirm_remove_all)" "n" || exit 0
-            log_info "$(msg stopping_containers)"
+            confirm "Remove ALL SUI Solo components and data?" "n" || exit 0
+            log_info "Stopping existing containers..."
             [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down -v 2>/dev/null || true
             [[ -d "$MASTER_INSTALL_DIR" ]] && cd "$MASTER_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
             [[ -d "$NODE_INSTALL_DIR" ]] && cd "$NODE_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
             rm -rf /opt/sui-solo
             docker network rm sui-master-net sui-node-net 2>/dev/null || true
-            log_success "$(msg all_uninstalled)"
+            log_success "All SUI Solo components uninstalled!"
             ;;
-        4) log_info "$(msg cancelled)" ;;
-        *) log_error "$(msg invalid_choice)" ;;
+        4) log_info "Cancelled" ;;
+        *) log_error "Invalid choice" ;;
     esac
 }
 
@@ -930,42 +686,41 @@ uninstall() {
 #=============================================================================
 install_both() {
     print_banner
-    select_language
     check_os
     check_root
     
-    log_step "$(msg install_both)"
+    log_step "Installing Master + Node on same server"
     echo ""
     
     [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" ]] && {
-        log_warn "$(msg source_not_found)"
+        log_warn "Source files not found locally"
         check_dependencies
         download_source_files
     }
     
     check_dependencies
     
-    log_info "$(msg master_config)"
-    read -r -p "  $(msg enter_master_domain): " master_domain < /dev/tty
+    log_info "Master Configuration"
+    read -r -p "  Enter Master Domain: " master_domain < /dev/tty
     master_domain=$(echo "$master_domain" | sed 's|https://||g' | sed 's|http://||g' | tr -d '/')
     
-    log_info "$(msg node_config)"
-    read -r -p "  $(msg enter_node_domain): " node_domain < /dev/tty
+    log_info "Node Configuration"
+    read -r -p "  Enter Node Domain: " node_domain < /dev/tty
     node_domain=$(echo "$node_domain" | sed 's|https://||g' | sed 's|http://||g' | tr -d '/')
     
-    read -r -p "  $(msg enter_email) [admin@example.com]: " email < /dev/tty
+    read -r -p "  Enter Email [admin@example.com]: " email < /dev/tty
     email=${email:-admin@example.com}
     
     command -v openssl &>/dev/null && secret=$(openssl rand -hex 32) || \
         secret=$(head -c 64 /dev/urandom | sha256sum | cut -d' ' -f1)
     
     echo ""
-    log_info "$(msg summary)"
+    log_info "Summary:"
     echo -e "  Master: ${BOLD}${master_domain}${NC}"
     echo -e "  Node:   ${BOLD}${node_domain}${NC}"
     echo -e "  Email:  ${BOLD}${email}${NC}"
     echo ""
-    confirm "$(msg proceed)" "y" || exit 0
+    confirm "Proceed?" "y" || exit 0
     
     check_ports_avail 80 443 53
     create_docker_networks
@@ -979,11 +734,11 @@ install_both() {
     install_node
     
     echo ""
-    log_success "$(msg both_installed)"
+    log_success "Both Master and Node installed successfully!"
     echo ""
-    echo -e "  ${ARROW} $(msg master_panel): ${CYAN}https://${master_domain}${NC}"
-    echo -e "  ${ARROW} $(msg node_url):     ${CYAN}https://${node_domain}${NC}"
-    echo -e "  ${ARROW} $(msg adguard_home): ${CYAN}https://${node_domain}/adguard/${NC}"
+    echo -e "  ${ARROW} Master Panel: ${CYAN}https://${master_domain}${NC}"
+    echo -e "  ${ARROW} Node URL:     ${CYAN}https://${node_domain}${NC}"
+    echo -e "  ${ARROW} AdGuard Home: ${CYAN}https://${node_domain}/adguard/${NC}"
     echo ""
 }
 
@@ -992,15 +747,11 @@ install_both() {
 #=============================================================================
 main() {
     print_banner
-    
-    # Only select language in interactive mode (no CLI args)
-    [[ -z "$CLI_MODE" ]] && select_language
-    
     check_os
     check_root
     
     [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" ]] && {
-        log_warn "$(msg source_not_found)"
+        log_warn "Source files not found locally"
         check_dependencies
         download_source_files
     }
@@ -1012,18 +763,15 @@ main() {
 }
 
 show_help() {
-    printf "$(msg help_usage)\n" "$0"
+    printf "Usage: sudo %s [OPTION]\n" "$0"
     echo ""
-    echo "$(msg help_options)"
-    echo "  --master     $(msg help_master)"
-    echo "  --node       $(msg help_node)"
-    echo "  --both       $(msg help_both)"
-    echo "  --uninstall  $(msg help_uninstall)"
-    echo "  --help       $(msg help_help)"
+    echo "Options:"
+    echo "  --master     Install Master (Control Panel)"
+    echo "  --node       Install Node (Proxy Agent)"
+    echo "  --both       Install Master + Node on same server"
+    echo "  --uninstall  Uninstall SUI Solo"
+    echo "  --help       Show this help"
 }
-
-# Detect language from environment or use default
-[[ -n "${LANG}" && "${LANG}" =~ ^zh ]] && LANG_CODE="zh" || LANG_CODE="en"
 
 case "${1:-}" in
     --master)    CLI_MODE="master"; main ;;
