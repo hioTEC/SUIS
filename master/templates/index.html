@@ -225,7 +225,7 @@
 
     <!-- Config Modal -->
     <div class="modal" id="configModal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header">
                 <h3 id="configTitle">Configuration</h3>
                 <button class="modal-close" onclick="hideModal('configModal')">&times;</button>
@@ -233,9 +233,23 @@
             <form id="configForm">
                 <input type="hidden" name="nodeId" id="configNodeId">
                 <input type="hidden" name="service" id="configService">
+                
+                <!-- Template Selection (only for singbox) -->
+                <div class="form-group" id="templateSection" style="display: none;">
+                    <label>Quick Templates</label>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                        <button type="button" class="btn btn-sm btn-outline" onclick="loadTemplate('vless-reality')">VLESS+Reality</button>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="loadTemplate('vless-ws')">VLESS+WS</button>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="loadTemplate('vmess-ws')">VMess+WS</button>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="loadTemplate('hysteria2')">Hysteria2</button>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="loadTemplate('trojan')">Trojan</button>
+                    </div>
+                    <p style="font-size: 0.7rem; color: #64748b;">Click a template to auto-fill. Edit UUID/domain as needed.</p>
+                </div>
+                
                 <div class="form-group">
                     <label>Config Content</label>
-                    <textarea name="content" id="configContent" placeholder="Loading..."></textarea>
+                    <textarea name="content" id="configContent" placeholder="Loading..." style="min-height: 300px;"></textarea>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-outline" onclick="hideModal('configModal')">Cancel</button>
@@ -442,12 +456,106 @@
             document.getElementById('configContent').value = 'Loading...';
             document.getElementById('configModal').classList.add('active');
             
+            // Show template section only for singbox
+            document.getElementById('templateSection').style.display = service === 'singbox' ? 'block' : 'none';
+            
             try {
                 const resp = await fetch(`/api/nodes/${nodeId}/config/${service}`);
                 const data = await resp.json();
                 document.getElementById('configContent').value = data.content || data.error || 'No config found';
             } catch (err) {
                 document.getElementById('configContent').value = 'Failed to load config';
+            }
+        }
+
+        // Sing-box config templates
+        const TEMPLATES = {
+            'vless-reality': {
+                "log": {"level": "info"},
+                "inbounds": [{
+                    "type": "vless",
+                    "tag": "vless-in",
+                    "listen": "::",
+                    "listen_port": 443,
+                    "users": [{"uuid": "YOUR-UUID-HERE", "flow": "xtls-rprx-vision"}],
+                    "tls": {
+                        "enabled": true,
+                        "server_name": "www.microsoft.com",
+                        "reality": {
+                            "enabled": true,
+                            "handshake": {"server": "www.microsoft.com", "server_port": 443},
+                            "private_key": "YOUR-PRIVATE-KEY",
+                            "short_id": ["abcd1234"]
+                        }
+                    }
+                }],
+                "outbounds": [{"type": "direct", "tag": "direct"}]
+            },
+            'vless-ws': {
+                "log": {"level": "info"},
+                "inbounds": [{
+                    "type": "vless",
+                    "tag": "vless-ws-in",
+                    "listen": "::",
+                    "listen_port": 443,
+                    "users": [{"uuid": "YOUR-UUID-HERE"}],
+                    "transport": {"type": "ws", "path": "/vless"},
+                    "tls": {"enabled": true, "server_name": "YOUR-DOMAIN"}
+                }],
+                "outbounds": [{"type": "direct", "tag": "direct"}]
+            },
+            'vmess-ws': {
+                "log": {"level": "info"},
+                "inbounds": [{
+                    "type": "vmess",
+                    "tag": "vmess-ws-in",
+                    "listen": "::",
+                    "listen_port": 443,
+                    "users": [{"uuid": "YOUR-UUID-HERE"}],
+                    "transport": {"type": "ws", "path": "/vmess"},
+                    "tls": {"enabled": true, "server_name": "YOUR-DOMAIN"}
+                }],
+                "outbounds": [{"type": "direct", "tag": "direct"}]
+            },
+            'hysteria2': {
+                "log": {"level": "info"},
+                "inbounds": [{
+                    "type": "hysteria2",
+                    "tag": "hy2-in",
+                    "listen": "::",
+                    "listen_port": 443,
+                    "users": [{"password": "YOUR-PASSWORD-HERE"}],
+                    "tls": {"enabled": true, "server_name": "YOUR-DOMAIN"}
+                }],
+                "outbounds": [{"type": "direct", "tag": "direct"}]
+            },
+            'trojan': {
+                "log": {"level": "info"},
+                "inbounds": [{
+                    "type": "trojan",
+                    "tag": "trojan-in",
+                    "listen": "::",
+                    "listen_port": 443,
+                    "users": [{"password": "YOUR-PASSWORD-HERE"}],
+                    "tls": {"enabled": true, "server_name": "YOUR-DOMAIN"}
+                }],
+                "outbounds": [{"type": "direct", "tag": "direct"}]
+            }
+        };
+
+        function loadTemplate(name) {
+            if (TEMPLATES[name]) {
+                const config = JSON.parse(JSON.stringify(TEMPLATES[name]));
+                // Auto-fill with a generated UUID
+                const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                    const r = Math.random() * 16 | 0;
+                    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+                });
+                const configStr = JSON.stringify(config, null, 2)
+                    .replace(/YOUR-UUID-HERE/g, uuid)
+                    .replace(/YOUR-PASSWORD-HERE/g, uuid.replace(/-/g, '').substring(0, 16));
+                document.getElementById('configContent').value = configStr;
+                showToast(`Loaded ${name} template. Edit domain/keys as needed.`);
             }
         }
 

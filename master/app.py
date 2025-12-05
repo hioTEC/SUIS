@@ -20,7 +20,7 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 SALT = "SUI_Solo_Secured_2025"
-VERSION = "1.9.13"
+VERSION = "1.9.14"
 GITHUB_REPO = "https://github.com/pjonix/SUIS"
 GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/main"
 

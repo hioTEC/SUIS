@@ -2,6 +2,18 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.14] - 2025-12-06
+
+### Added
+- Sing-box config templates: VLESS+Reality, VLESS+WS, VMess+WS, Hysteria2, Trojan
+- Template auto-fills with generated UUID
+- Config modal now shows template buttons for singbox service
+
+### Changed
+- Expanded config modal for better editing experience
+
+---
+
 ## [1.9.13] - 2025-12-06
 
 ### Added

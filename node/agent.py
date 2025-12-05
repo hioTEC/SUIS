@@ -247,7 +247,7 @@ def rebuild():
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.9.13'})
+    return jsonify({'version': '1.9.14'})
 
 
 @app.route('/health')
