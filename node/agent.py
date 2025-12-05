@@ -192,13 +192,13 @@ def update():
         result = subprocess.run(
             ['sh', '-c', '''
                 cd /opt/sui-solo/node
-                curl -fsSL https://github.com/pjonix/SUIS/archive/main.zip -o /tmp/update.zip
+                curl -fsSL https://github.com/pjonix/SUIS/archive/Eng.zip -o /tmp/update.zip
                 unzip -o /tmp/update.zip -d /tmp/
-                cp /tmp/SUIS-main/node/agent.py ./agent.py.new
-                cp /tmp/SUIS-main/node/templates/Caddyfile.template ./templates/Caddyfile.template.new
+                cp /tmp/SUIS-Eng/node/agent.py ./agent.py.new
+                cp /tmp/SUIS-Eng/node/templates/Caddyfile.template ./templates/Caddyfile.template.new
                 mv ./agent.py.new ./agent.py
                 mv ./templates/Caddyfile.template.new ./templates/Caddyfile.template
-                rm -rf /tmp/update.zip /tmp/SUIS-main
+                rm -rf /tmp/update.zip /tmp/SUIS-Eng
                 docker compose up -d --build
             '''],
             capture_output=True, text=True, timeout=120

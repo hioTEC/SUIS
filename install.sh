@@ -95,7 +95,7 @@ detect_script_dir() {
 
 download_source_files() {
     log_step "Downloading source files from GitHub..."
-    local github_zip="https://github.com/pjonix/SUIS/archive/refs/heads/main.zip"
+    local github_zip="https://github.com/pjonix/SUIS/archive/refs/heads/Eng.zip"
     local tmp_dir="/tmp/sui-solo-install-$$"
     local zip_file="${tmp_dir}/suis.zip"
     
