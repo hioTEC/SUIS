@@ -3,43 +3,34 @@
 }
 
 {$NODE_DOMAIN} {
-    # Hidden API endpoint (salted hash path)
     handle /{$PATH_PREFIX}/api/v1/* {
         reverse_proxy agent:5001
     }
 
-    # AdGuard Home Web UI
     handle /adguard/* {
         uri strip_prefix /adguard
         reverse_proxy adguard:3000
     }
 
-    # AdGuard DNS-over-HTTPS
     handle /dns-query {
         reverse_proxy adguard:443 {
-            transport http {
-                tls_insecure_skip_verify
-            }
+            transport http { tls_insecure_skip_verify }
         }
     }
 
-    # Sing-box API
     handle /singbox/* {
         uri strip_prefix /singbox
         reverse_proxy singbox:9090
     }
 
-    # Health check
     handle /health {
         reverse_proxy agent:5001
     }
 
-    # Fallback: Camouflage
     handle {
         respond "Welcome" 200
     }
 
-    # Security headers
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Frame-Options "DENY"

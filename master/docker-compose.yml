@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # Caddy - HTTPS Gateway (required for security)
   gateway:
     image: caddy:2-alpine
     container_name: sui-master-gateway
@@ -20,12 +19,10 @@ services:
     depends_on:
       - app
 
-  # Flask App - Internal only (not exposed to host)
   app:
     build: .
     container_name: sui-master
     restart: unless-stopped
-    # NO ports exposed to host - only accessible via Caddy
     expose:
       - "5000"
     environment:

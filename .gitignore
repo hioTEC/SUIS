@@ -9,7 +9,7 @@
 *.crt
 certs/
 
-# Config files (may contain secrets)
+# Config (may contain secrets)
 config.json
 AdGuardHome.yaml
 Caddyfile
@@ -33,10 +33,12 @@ docker-compose.override.yml
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs & Data
 *.log
 logs/
-
-# Data
 data/
 *.db
+
+# Old project folder
+sui-solo/
+nexus-proxy/

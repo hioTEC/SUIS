@@ -212,7 +212,6 @@ check_ports() {
     fi
 }
 
-
 #=============================================================================
 # MASTER INSTALLATION (with HTTPS via Caddy)
 #=============================================================================
@@ -243,6 +242,7 @@ install_master() {
         echo ""
         echo -e "${BOLD}Master Configuration${NC}"
         echo -e "${YELLOW}⚠ IMPORTANT: Master requires a domain for HTTPS security!${NC}"
+        echo -e "${YELLOW}⚠ Ensure DNS is already pointing to this server!${NC}"
         echo ""
         
         # Master Domain (REQUIRED for HTTPS)
@@ -280,21 +280,14 @@ install_master() {
 }
 
 ${MASTER_DOMAIN} {
-    # Reverse proxy to Flask app
     reverse_proxy app:5000
 
-    # Security headers
     header {
-        # HSTS (1 year)
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        # Prevent clickjacking
         X-Frame-Options "DENY"
-        # XSS protection
         X-Content-Type-Options "nosniff"
         X-XSS-Protection "1; mode=block"
-        # Referrer policy
         Referrer-Policy "strict-origin-when-cross-origin"
-        # Remove server header
         -Server
     }
 
@@ -364,6 +357,7 @@ install_node() {
     if [[ "$UPGRADE_MODE" != "true" ]]; then
         echo ""
         echo -e "${BOLD}Node Configuration${NC}"
+        echo -e "${YELLOW}⚠ Ensure DNS is already pointing to this server!${NC}"
         echo ""
         
         # Cluster Secret
@@ -448,7 +442,6 @@ EOF
     echo -e "  ${WARN} ${YELLOW}Add this node in Master panel: https://YOUR_MASTER_DOMAIN${NC}"
     echo ""
 }
-
 
 #=============================================================================
 # MANAGEMENT FUNCTIONS

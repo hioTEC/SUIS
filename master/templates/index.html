@@ -46,34 +46,19 @@
     <div class="container">
         <header>
             <h1>🚀 SUI Solo Control Panel <span class="https-badge">HTTPS</span></h1>
-            <div class="secret-box">
-                <span>Secret:</span> <code id="secret">{{ secret[:8] }}...</code>
-                <button class="btn btn-sm" onclick="copySecret()">Copy</button>
-            </div>
+            <div class="secret-box"><span>Secret:</span> <code>{{ secret[:8] }}...</code> <button class="btn btn-sm" onclick="copySecret()">Copy</button></div>
         </header>
         <div class="card">
-            <div class="card-header">
-                <h2>Nodes</h2>
-                <button class="btn btn-primary" onclick="showAddModal()">+ Add Node</button>
-            </div>
+            <div class="card-header"><h2>Nodes</h2><button class="btn btn-primary" onclick="showAddModal()">+ Add Node</button></div>
             <div class="node-grid" id="nodeGrid">
-                {% if not nodes %}
-                <div class="empty-state"><p>No nodes yet. Click "Add Node" to start.</p></div>
-                {% endif %}
+                {% if not nodes %}<div class="empty-state"><p>No nodes yet. Click "Add Node" to start.</p></div>{% endif %}
                 {% for id, node in nodes.items() %}
-                <div class="node-card" data-id="{{ id }}">
+                <div class="node-card">
                     <div class="node-header">
-                        <div>
-                            <div class="node-name">{{ node.name }}</div>
-                            <div class="node-domain">{{ node.domain }}</div>
-                        </div>
+                        <div><div class="node-name">{{ node.name }}</div><div class="node-domain">{{ node.domain }}</div></div>
                         <span class="status status-{{ node.status }}">{{ node.status }}</span>
                     </div>
-                    <div class="services">
-                        <span class="service-badge">Sing-box</span>
-                        <span class="service-badge">AdGuard</span>
-                        <span class="service-badge">Caddy</span>
-                    </div>
+                    <div class="services"><span class="service-badge">Sing-box</span><span class="service-badge">AdGuard</span><span class="service-badge">Caddy</span></div>
                     <div class="actions">
                         <button class="btn btn-primary btn-sm" onclick="checkStatus('{{ id }}')">Check</button>
                         <button class="btn btn-sm" onclick="viewServices('{{ id }}')">Services</button>
@@ -90,10 +75,7 @@
             <form id="addForm">
                 <div class="form-group"><label>Node Name</label><input type="text" name="name" placeholder="Tokyo-01" required></div>
                 <div class="form-group"><label>Domain</label><input type="text" name="domain" placeholder="node1.example.com" required></div>
-                <div class="form-actions">
-                    <button type="button" class="btn" onclick="hideAddModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add</button>
-                </div>
+                <div class="form-actions"><button type="button" class="btn" onclick="hideAddModal()">Cancel</button><button type="submit" class="btn btn-primary">Add</button></div>
             </form>
         </div>
     </div>
@@ -105,31 +87,12 @@
         document.getElementById('addForm').onsubmit = async (e) => {
             e.preventDefault();
             const form = new FormData(e.target);
-            const resp = await fetch('/api/nodes', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({name: form.get('name'), domain: form.get('domain')})
-            });
+            const resp = await fetch('/api/nodes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: form.get('name'), domain: form.get('domain')}) });
             resp.ok ? location.reload() : alert('Failed');
         };
-        async function checkStatus(id) {
-            const resp = await fetch(`/api/nodes/${id}/status`);
-            const data = await resp.json();
-            alert(data.error ? `Error: ${data.error}` : `Status: Online\nUptime: ${data.uptime || 'N/A'}`);
-            location.reload();
-        }
-        async function viewServices(id) {
-            const resp = await fetch(`/api/nodes/${id}/services`);
-            const data = await resp.json();
-            if (data.error) { alert(`Error: ${data.error}`); return; }
-            let msg = 'Services:\n';
-            for (const [name, status] of Object.entries(data.services || {})) msg += `- ${name}: ${status}\n`;
-            alert(msg);
-        }
-        async function deleteNode(id) {
-            if (!confirm('Delete?')) return;
-            await fetch(`/api/nodes/${id}`, {method: 'DELETE'});
-            location.reload();
-        }
+        async function checkStatus(id) { const r = await fetch(`/api/nodes/${id}/status`); const d = await r.json(); alert(d.error ? `Error: ${d.error}` : `Online - ${d.uptime||'N/A'}`); location.reload(); }
+        async function viewServices(id) { const r = await fetch(`/api/nodes/${id}/services`); const d = await r.json(); alert(d.error ? `Error: ${d.error}` : Object.entries(d.services||{}).map(([k,v])=>`${k}: ${v}`).join('\n')); }
+        async function deleteNode(id) { if(confirm('Delete?')) { await fetch(`/api/nodes/${id}`, {method:'DELETE'}); location.reload(); } }
     </script>
 </body>
 </html>
