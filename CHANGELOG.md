@@ -2,6 +2,18 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.12] - 2025-12-06
+
+### Added
+- Master panel: Added "Rebuild" button to restart all Node containers remotely
+- Node Agent: Added `/rebuild` API endpoint for container rebuild
+- `--both` installation: Auto-connects Node to Master (no manual add needed)
+
+### Changed
+- Node is automatically registered in Master when using `--both` installation
+
+---
+
 ## [1.9.11] - 2025-12-06
 
 ### Fixed

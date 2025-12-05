@@ -224,11 +224,30 @@ def update():
         return jsonify({'success': False, 'error': str(e)})
 
 
+@app.route(f'/{PATH_PREFIX}/api/v1/rebuild', methods=['POST'])
+@require_auth
+@rate_limit(api_limiter)
+def rebuild():
+    """Rebuild and restart all node containers"""
+    try:
+        result = subprocess.run(
+            ['sh', '-c', '''
+                cd /opt/sui-solo/node
+                docker compose down
+                docker compose up -d --build
+            '''],
+            capture_output=True, text=True, timeout=180
+        )
+        return jsonify({'success': result.returncode == 0, 'output': result.stdout + result.stderr})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
 @app.route(f'/{PATH_PREFIX}/api/v1/version')
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.9.11'})
+    return jsonify({'version': '1.9.12'})
 
 
 @app.route('/health')

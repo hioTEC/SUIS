@@ -20,7 +20,7 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 SALT = "SUI_Solo_Secured_2025"
-VERSION = "1.9.11"
+VERSION = "1.9.12"
 GITHUB_REPO = "https://github.com/pjonix/SUIS"
 GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/main"
 
@@ -283,6 +283,18 @@ def update_node(node_id):
     if node_id not in nodes:
         return jsonify({'error': 'Node not found'}), 404
     return jsonify(call_node_api(nodes[node_id], 'update', 'POST', timeout=120))
+
+
+@app.route('/api/nodes/<node_id>/rebuild', methods=['POST'])
+@rate_limit(auth_limiter)
+def rebuild_node(node_id):
+    """Rebuild and restart all containers on a node"""
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    return jsonify(call_node_api(nodes[node_id], 'rebuild', 'POST', timeout=180))
 
 
 # Settings & Update APIs

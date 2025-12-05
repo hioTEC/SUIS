@@ -136,6 +136,7 @@
                         <button class="btn btn-primary btn-sm" onclick="checkStatus('{{ id }}')">Check Status</button>
                         <button class="btn btn-outline btn-sm" onclick="showConfigModal('{{ id }}', 'singbox')">Config</button>
                         <button class="btn btn-outline btn-sm" onclick="showLogsModal('{{ id }}')">Logs</button>
+                        <button class="btn btn-success btn-sm" onclick="rebuildNode('{{ id }}')">Rebuild</button>
                         <button class="btn btn-warning btn-sm" onclick="updateNode('{{ id }}')">Update</button>
                         <button class="btn btn-danger btn-sm" onclick="deleteNode('{{ id }}')">Delete</button>
                     </div>
@@ -438,6 +439,21 @@
                 showToast(data.success ? 'Node updated successfully' : `Update failed: ${data.error}`, data.success ? 'success' : 'error');
             } catch (err) {
                 showToast('Update failed', 'error');
+            }
+        }
+
+        async function rebuildNode(id) {
+            if (!confirm('Rebuild all containers on this node? This will restart all services.')) return;
+            showToast('Rebuilding node containers...');
+            try {
+                const resp = await fetch(`/api/nodes/${id}/rebuild`, {method: 'POST'});
+                const data = await resp.json();
+                showToast(data.success ? 'Node rebuilt successfully' : `Rebuild failed: ${data.error || data.output}`, data.success ? 'success' : 'error');
+                if (data.success) {
+                    setTimeout(() => checkStatus(id), 5000);
+                }
+            } catch (err) {
+                showToast('Rebuild failed', 'error');
             }
         }
 

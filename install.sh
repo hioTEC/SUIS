@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.11"
+readonly VERSION="1.9.12"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -834,6 +834,34 @@ install_both() {
     echo -e "  ${ARROW} Master Panel: ${CYAN}https://${master_domain}${NC}"
     echo -e "  ${ARROW} Node URL:     ${CYAN}https://${node_domain}${NC}"
     echo -e "  ${ARROW} AdGuard Home: ${CYAN}https://${node_domain}/adguard/${NC}"
+    echo ""
+    
+    # Auto-connect Node to Master
+    log_info "Auto-connecting Node to Master..."
+    sleep 3  # Wait for services to be ready
+    
+    local node_name=$(echo "$node_domain" | cut -d. -f1 | tr '[:lower:]' '[:upper:]')
+    local nodes_file="$MASTER_INSTALL_DIR/../master-data/nodes.json"
+    local node_id=$(echo -n "$node_domain" | md5sum | cut -c1-8)
+    
+    # Create nodes.json in the Docker volume
+    docker exec sui-master sh -c "mkdir -p /data && cat > /data/nodes.json << NODEEOF
+{
+  \"${node_id}\": {
+    \"name\": \"${node_name}\",
+    \"domain\": \"${node_domain}\",
+    \"https\": true,
+    \"added_at\": \"$(date -Iseconds)\",
+    \"status\": \"unknown\"
+  }
+}
+NODEEOF"
+    
+    if [[ $? -eq 0 ]]; then
+        echo -e "  ${CHECK} Node auto-connected to Master"
+    else
+        log_warn "Auto-connect failed. Please add node manually in Master panel."
+    fi
     echo ""
 }
 
