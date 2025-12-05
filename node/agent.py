@@ -18,7 +18,6 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODE_DOMAIN = os.environ.get('NODE_DOMAIN', '')
 CONFIG_DIR = os.environ.get('CONFIG_DIR', '/config')
 SALT = "SUI_Solo_Secured_2025"
-PRESETS_FILE = os.path.join(CONFIG_DIR, 'presets.json')
 
 
 class RateLimiter:
@@ -549,276 +548,55 @@ def set_firewall():
 
 
 # ============================================================================
-# PRESET TEMPLATES
+# SUBSCRIPTION GENERATION (from actual sing-box config)
 # ============================================================================
-def generate_uuid():
-    return str(uuid_lib.uuid4())
 
 
-def generate_short_id():
-    return hashlib.md5(os.urandom(16)).hexdigest()[:8]
-
-
-def generate_x25519_keys():
-    """Generate X25519 key pair for Reality"""
+def load_singbox_config():
+    """Load sing-box configuration"""
+    config_path = os.path.join(CONFIG_DIR, 'singbox/config.json')
     try:
-        result = subprocess.run(
-            ['sing-box', 'generate', 'reality-keypair'],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            lines = result.stdout.strip().split('\n')
-            private_key = lines[0].split(': ')[1] if len(lines) > 0 else ''
-            public_key = lines[1].split(': ')[1] if len(lines) > 1 else ''
-            return private_key, public_key
-    except:
-        pass
-    # Fallback: return placeholder
-    return 'GENERATE_WITH_SINGBOX', 'GENERATE_WITH_SINGBOX'
-
-
-def get_preset_templates():
-    """Generate preset templates with auto-generated credentials"""
-    presets = load_presets()
-    
-    # VLESS + XTLS-Vision + TLS (Reality)
-    vless_vision = presets.get('vless_vision', {})
-    if not vless_vision.get('uuid'):
-        private_key, public_key = generate_x25519_keys()
-        vless_vision = {
-            'uuid': generate_uuid(),
-            'private_key': private_key,
-            'public_key': public_key,
-            'short_id': generate_short_id(),
-            'enabled': True
-        }
-    
-    # VMess + WS
-    vmess_ws = presets.get('vmess_ws', {})
-    if not vmess_ws.get('uuid'):
-        vmess_ws = {
-            'uuid': generate_uuid(),
-            'path': '/vmess-ws',
-            'enabled': True
-        }
-    
-    # Hysteria2
-    hysteria2 = presets.get('hysteria2', {})
-    if not hysteria2.get('password'):
-        hysteria2 = {
-            'password': generate_uuid().replace('-', '')[:16],
-            'enabled': True
-        }
-    
-    return {
-        'vless_vision': vless_vision,
-        'vmess_ws': vmess_ws,
-        'hysteria2': hysteria2
-    }
-
-
-def load_presets():
-    """Load saved presets from file"""
-    try:
-        if os.path.exists(PRESETS_FILE):
-            with open(PRESETS_FILE) as f:
+        if os.path.exists(config_path):
+            with open(config_path) as f:
                 return json.load(f)
-    except:
-        pass
+    except Exception as e:
+        app.logger.error(f"Failed to load singbox config: {e}")
     return {}
 
 
-def save_presets(presets):
-    """Save presets to file"""
-    os.makedirs(os.path.dirname(PRESETS_FILE), exist_ok=True)
-    with open(PRESETS_FILE, 'w') as f:
-        json.dump(presets, f, indent=2)
-
-
-def init_presets():
-    """Initialize presets on first run"""
-    if not os.path.exists(PRESETS_FILE):
-        presets = get_preset_templates()
-        save_presets(presets)
-        # Also generate initial singbox config
-        generate_singbox_config(presets)
-    return load_presets()
-
-
-def generate_singbox_config(presets):
-    """Generate sing-box config from presets"""
-    inbounds = []
-    port = 10000
-    
-    # VLESS + XTLS-Vision + Reality
-    if presets.get('vless_vision', {}).get('enabled'):
-        vless = presets['vless_vision']
-        inbounds.append({
-            "type": "vless",
-            "tag": "vless-vision",
-            "listen": "::",
-            "listen_port": port,
-            "users": [{"uuid": vless['uuid'], "flow": "xtls-rprx-vision"}],
-            "tls": {
-                "enabled": True,
-                "server_name": "www.microsoft.com",
-                "reality": {
-                    "enabled": True,
-                    "handshake": {"server": "www.microsoft.com", "server_port": 443},
-                    "private_key": vless['private_key'],
-                    "short_id": [vless['short_id']]
-                }
-            }
-        })
-        port += 1
-    
-    # VMess + WS
-    if presets.get('vmess_ws', {}).get('enabled'):
-        vmess = presets['vmess_ws']
-        inbounds.append({
-            "type": "vmess",
-            "tag": "vmess-ws",
-            "listen": "::",
-            "listen_port": port,
-            "users": [{"uuid": vmess['uuid']}],
-            "transport": {"type": "ws", "path": vmess.get('path', '/vmess-ws')}
-        })
-        port += 1
-    
-    # Hysteria2
-    if presets.get('hysteria2', {}).get('enabled'):
-        hy2 = presets['hysteria2']
-        inbounds.append({
-            "type": "hysteria2",
-            "tag": "hysteria2",
-            "listen": "::",
-            "listen_port": port,
-            "users": [{"password": hy2['password']}],
-            "tls": {
-                "enabled": True,
-                "alpn": ["h3"],
-                "certificate_path": "/config/certs/cert.pem",
-                "key_path": "/config/certs/key.pem"
-            }
-        })
-    
-    config = {
-        "log": {"level": "info"},
-        "inbounds": inbounds,
-        "outbounds": [{"type": "direct", "tag": "direct"}]
-    }
-    
-    config_path = os.path.join(CONFIG_DIR, 'singbox/config.json')
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
-    
-    return config
-
-
-@app.route(f'/{PATH_PREFIX}/api/v1/presets', methods=['GET'])
-@require_auth
-@rate_limit(api_limiter)
-def get_presets():
-    """Get preset configurations"""
-    presets = load_presets()
-    if not presets:
-        presets = init_presets()
-    return jsonify({'presets': presets, 'domain': NODE_DOMAIN})
-
-
-@app.route(f'/{PATH_PREFIX}/api/v1/presets', methods=['POST'])
-@require_auth
-@rate_limit(api_limiter)
-def update_presets():
-    """Update preset configurations and regenerate singbox config"""
-    data = request.json or {}
-    presets = load_presets()
-    
-    # Update enabled status
-    for key in ['vless_vision', 'vmess_ws', 'hysteria2']:
-        if key in data:
-            if key not in presets:
-                presets[key] = get_preset_templates()[key]
-            presets[key]['enabled'] = data[key].get('enabled', presets[key].get('enabled', True))
-    
-    save_presets(presets)
-    generate_singbox_config(presets)
-    
-    return jsonify({'success': True, 'presets': presets})
-
-
-@app.route(f'/{PATH_PREFIX}/api/v1/presets/regenerate', methods=['POST'])
-@require_auth
-@rate_limit(api_limiter)
-def regenerate_presets():
-    """Regenerate all preset credentials"""
-    private_key, public_key = generate_x25519_keys()
-    presets = {
-        'vless_vision': {
-            'uuid': generate_uuid(),
-            'private_key': private_key,
-            'public_key': public_key,
-            'short_id': generate_short_id(),
-            'enabled': True
-        },
-        'vmess_ws': {
-            'uuid': generate_uuid(),
-            'path': '/vmess-ws',
-            'enabled': True
-        },
-        'hysteria2': {
-            'password': generate_uuid().replace('-', '')[:16],
-            'enabled': True
-        }
-    }
-    save_presets(presets)
-    generate_singbox_config(presets)
-    
-    return jsonify({'success': True, 'presets': presets})
+def find_inbound(config, inbound_type):
+    """Find inbound by type in sing-box config"""
+    for inbound in config.get('inbounds', []):
+        if inbound.get('type') == inbound_type:
+            return inbound
+    return None
 
 
 @app.route(f'/{PATH_PREFIX}/api/v1/subscribe')
 @require_auth
 @rate_limit(api_limiter)
 def node_subscribe():
-    """Get subscription links for this node"""
-    presets = load_presets()
+    """Get subscription links for this node (from actual sing-box config)"""
+    config = load_singbox_config()
     links = []
-    port = 10000
     
-    # VLESS + Vision + Reality
-    if presets.get('vless_vision', {}).get('enabled'):
-        vless = presets['vless_vision']
-        link = f"vless://{vless['uuid']}@{NODE_DOMAIN}:{port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk={vless['public_key']}&sid={vless['short_id']}&type=tcp#{NODE_DOMAIN}-VLESS-Vision"
-        links.append({'type': 'vless-vision', 'link': link, 'port': port})
-        port += 1
+    # VLESS + XTLS-Vision + TLS (port 443)
+    vless_inbound = find_inbound(config, 'vless')
+    if vless_inbound and vless_inbound.get('users'):
+        uuid = vless_inbound['users'][0].get('uuid', '')
+        port = vless_inbound.get('listen_port', 443)
+        # VLESS link format: vless://uuid@domain:port?params#name
+        link = f"vless://{uuid}@{NODE_DOMAIN}:{port}?encryption=none&flow=xtls-rprx-vision&security=tls&sni={NODE_DOMAIN}&alpn=h2,http/1.1&type=tcp#{NODE_DOMAIN}-VLESS"
+        links.append({'type': 'vless', 'link': link, 'port': port})
     
-    # VMess + WS
-    if presets.get('vmess_ws', {}).get('enabled'):
-        vmess = presets['vmess_ws']
-        import base64
-        vmess_config = {
-            "v": "2",
-            "ps": f"{NODE_DOMAIN}-VMess-WS",
-            "add": NODE_DOMAIN,
-            "port": str(port),
-            "id": vmess['uuid'],
-            "aid": "0",
-            "net": "ws",
-            "type": "none",
-            "host": NODE_DOMAIN,
-            "path": vmess.get('path', '/vmess-ws'),
-            "tls": "tls"
-        }
-        link = "vmess://" + base64.b64encode(json.dumps(vmess_config).encode()).decode()
-        links.append({'type': 'vmess-ws', 'link': link, 'port': port})
-        port += 1
-    
-    # Hysteria2
-    if presets.get('hysteria2', {}).get('enabled'):
-        hy2 = presets['hysteria2']
-        link = f"hysteria2://{hy2['password']}@{NODE_DOMAIN}:{port}?sni={NODE_DOMAIN}#{NODE_DOMAIN}-Hysteria2"
+    # Hysteria2 (port 50000-60000 with port hopping)
+    hy2_inbound = find_inbound(config, 'hysteria2')
+    if hy2_inbound and hy2_inbound.get('users'):
+        password = hy2_inbound['users'][0].get('password', '')
+        port = hy2_inbound.get('listen_port', 50000)
+        # Hysteria2 link format: hysteria2://password@domain:port?params#name
+        # Note: Port hopping is handled by client automatically when using port range
+        link = f"hysteria2://{password}@{NODE_DOMAIN}:{port}?sni={NODE_DOMAIN}&alpn=h3#{NODE_DOMAIN}-Hysteria2"
         links.append({'type': 'hysteria2', 'link': link, 'port': port})
     
     return jsonify({'links': links, 'domain': NODE_DOMAIN})
@@ -829,8 +607,7 @@ def health():
     return jsonify({'status': 'healthy'})
 
 
-# Initialize presets on startup
-init_presets()
+# No initialization needed - config is generated by install script
 
 
 if __name__ == '__main__':
