@@ -44,8 +44,16 @@ dig +short node1.example.com
 ### 安装主控 (Master)
 
 ```bash
-git clone https://github.com/pjonix/SUIS.git
-cd SUIS
+# 下载并解压
+curl -L https://github.com/pjonix/SUIS/archive/refs/heads/main.zip -o SUIS.zip
+unzip SUIS.zip
+cd SUIS-main
+
+# 或使用 wget:
+# wget https://github.com/pjonix/SUIS/archive/refs/heads/main.zip
+# unzip main.zip && cd SUIS-main
+
+# 运行安装脚本
 sudo ./install.sh --master
 ```
 
