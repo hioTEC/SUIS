@@ -700,21 +700,45 @@ install_node() {
     
     create_docker_networks
     
-    if check_master_exists || check_gateway_exists; then
-        SHARED_CADDY_MODE=true
-        log_info "Master detected - using shared gateway mode"
-    else
-        check_ports_avail 80 443
-    fi
-    check_ports_avail 53
-
+    # New architecture: Sing-box MUST occupy 80/443
+    check_ports_avail 80 443 53
+    
     local path_prefix=$(echo -n "${SALT}:${secret}" | sha256sum | cut -c1-16)
     
-    mkdir -p "$NODE_INSTALL_DIR/config/singbox" "$NODE_INSTALL_DIR/config/adguard/conf"
+    mkdir -p "$NODE_INSTALL_DIR/config/singbox" "$NODE_INSTALL_DIR/config/adguard/conf" "$NODE_INSTALL_DIR/config/caddy" "$NODE_INSTALL_DIR/config/acme"
     cp -r "${SCRIPT_DIR}/node/"* "$NODE_INSTALL_DIR/"
     
+    # Generate docker-compose.yml for new architecture
     cat > "$NODE_INSTALL_DIR/docker-compose.yml" << 'EOF'
 services:
+  singbox:
+    image: ghcr.io/sagernet/sing-box:latest
+    container_name: sui-singbox
+    restart: unless-stopped
+    ports:
+      - "80:80/tcp"       # ACME HTTP-01 Challenge
+      - "443:443/tcp"     # VLESS + TLS
+      - "50000-60000:50000-60000/udp"  # Hysteria2 port hopping
+    volumes:
+      - ./config/singbox:/etc/sing-box:ro
+      - ./config/acme:/etc/sing-box/acme  # ACME certificates
+    command: ["run", "-c", "/etc/sing-box/config.json"]
+    networks: [sui-node-net]
+    cap_add: [NET_ADMIN]
+    cap_drop: [ALL]
+    
+  caddy:
+    image: caddy:2-alpine
+    container_name: sui-caddy
+    restart: unless-stopped
+    expose: ["80"]  # Internal network only
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./config/caddy/site:/usr/share/caddy:ro
+      - ./config/caddy/logs:/var/log/caddy
+    networks: [sui-node-net]
+    cap_drop: [ALL]
+    
   agent:
     build: .
     container_name: sui-agent
@@ -726,19 +750,11 @@ services:
       - CONFIG_DIR=/config
     volumes:
       - ./config:/config
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [sui-node-net]
-    security_opt: [no-new-privileges:true]
-  singbox:
-    image: ghcr.io/sagernet/sing-box:latest
-    container_name: sui-singbox
-    restart: unless-stopped
-    command: ["run", "-c", "/etc/sing-box/config.json"]
-    volumes: [./config/singbox:/etc/sing-box]
-    networks: [sui-node-net]
-    ports: ["8443:8443", "8444:8444/udp"]
-    cap_add: [NET_ADMIN]
     cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    
   adguard:
     image: adguard/adguardhome:latest
     container_name: sui-adguard
@@ -750,67 +766,168 @@ services:
     ports: ["53:53/tcp", "53:53/udp"]
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE, CHOWN, SETUID, SETGID]
+
 networks:
   sui-node-net:
     external: true
 EOF
 
     # Generate UUID and password for proxies
-    local proxy_uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-/')
+    local vless_uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-/')
     local hy2_password=$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | sha256sum | cut -c1-32)
     
-    # Generate self-signed certificate for sing-box
-    log_info "Generating TLS certificate for sing-box..."
-    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -days 3650 -nodes \
-        -keyout "$NODE_INSTALL_DIR/config/singbox/key.pem" \
-        -out "$NODE_INSTALL_DIR/config/singbox/cert.pem" \
-        -subj "/CN=${domain}" 2>/dev/null
-    
-    # Generate sing-box config with VLESS+Vision and Hysteria2
+    # Generate sing-box config with VLESS (443) + Hysteria2 (50000-60000)
+    log_info "Generating Sing-box configuration..."
     cat > "$NODE_INSTALL_DIR/config/singbox/config.json" << SBEOF
 {
-  "log": {"level": "info"},
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
   "inbounds": [
     {
       "type": "vless",
-      "tag": "vless-vision",
+      "tag": "vless-in",
       "listen": "::",
-      "listen_port": 8443,
-      "users": [{"uuid": "${proxy_uuid}", "flow": "xtls-rprx-vision"}],
+      "listen_port": 443,
+      "users": [
+        {
+          "uuid": "${vless_uuid}",
+          "flow": "xtls-rprx-vision"
+        }
+      ],
       "tls": {
         "enabled": true,
         "server_name": "${domain}",
-        "certificate_path": "/etc/sing-box/cert.pem",
-        "key_path": "/etc/sing-box/key.pem"
+        "acme": {
+          "domain": ["${domain}"],
+          "email": "${email}",
+          "provider": "letsencrypt",
+          "data_directory": "/etc/sing-box/acme"
+        }
+      },
+      "multiplex": {
+        "enabled": false
+      },
+      "transport": {
+        "type": "tcp"
       }
     },
     {
       "type": "hysteria2",
-      "tag": "hysteria2",
+      "tag": "hy2-in",
       "listen": "::",
-      "listen_port": 8444,
-      "users": [{"password": "${hy2_password}"}],
+      "listen_port": 50000,
+      "users": [
+        {
+          "password": "${hy2_password}"
+        }
+      ],
       "tls": {
         "enabled": true,
         "server_name": "${domain}",
-        "certificate_path": "/etc/sing-box/cert.pem",
-        "key_path": "/etc/sing-box/key.pem"
-      }
+        "acme": {
+          "domain": ["${domain}"],
+          "email": "${email}",
+          "provider": "letsencrypt",
+          "data_directory": "/etc/sing-box/acme"
+        }
+      },
+      "up_mbps": 100,
+      "down_mbps": 100,
+      "ignore_client_bandwidth": false,
+      "masquerade": "https://www.bing.com"
     }
   ],
-  "outbounds": [{"type": "direct", "tag": "direct"}]
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [],
+    "final": "direct"
+  }
 }
 SBEOF
+    
+    # Generate Caddy configuration (internal HTTP only)
+    log_info "Generating Caddy configuration..."
+    cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
+# Caddy runs on internal Docker network only (HTTP)
+# Receives fallback traffic from Sing-box on port 443
+:80 {
+    # Hidden API path (from Sing-box fallback)
+    handle /${path_prefix}/* {
+        reverse_proxy agent:5001
+    }
+    
+    # AdGuard Home Web UI (optional, for internal access)
+    handle /adguard/* {
+        uri strip_prefix /adguard
+        reverse_proxy adguard:3000
+    }
+    
+    # Camouflage website
+    handle {
+        respond / \`<!DOCTYPE html>
+<html>
+<head>
+    <title>Welcome</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 800px; 
+            margin: 50px auto; 
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; margin-bottom: 20px; }
+        p { color: #666; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to ${domain}</h1>
+        <p>This is a personal website.</p>
+    </div>
+</body>
+</html>\` 200
+    }
+    
+    # Security headers
+    header {
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
+        -Server
+    }
+    
+    log {
+        output file /var/log/caddy/access.log
+        level ERROR
+    }
+}
+CADDYEOF
     
     generate_adguard_config
     
     cat > "$NODE_INSTALL_DIR/.env" << EOF
 CLUSTER_SECRET=${secret}
 NODE_DOMAIN=${domain}
-PATH_PREFIX=${path_prefix}
 ACME_EMAIL=${email}
-PROXY_UUID=${proxy_uuid}
+VLESS_UUID=${vless_uuid}
 HY2_PASSWORD=${hy2_password}
+HY2_PORT_START=50000
+HY2_PORT_END=60000
 EOF
 
     cd "$NODE_INSTALL_DIR"
@@ -844,34 +961,36 @@ EOF
         log_info "Check logs: docker logs sui-agent / sui-singbox / sui-adguard"
     fi
     
-    if [[ "$SHARED_CADDY_MODE" == "true" ]]; then
-        generate_shared_caddyfile
-        reload_shared_gateway
-    else
-        setup_shared_gateway
-        generate_shared_caddyfile
-        start_shared_gateway
+    # Wait for ACME certificate (first time may take 1-2 minutes)
+    log_info "Waiting for ACME certificate issuance..."
+    log_warn "This may take 1-2 minutes on first installation..."
+    sleep 10
+    
+    # Check if certificate was issued
+    if [[ -d "$NODE_INSTALL_DIR/config/acme" ]]; then
+        log_success "ACME directory created"
     fi
     
-    # Generate proxy links
-    local vless_link="vless://${proxy_uuid}@${domain}:8443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&type=tcp#${domain}-VLESS"
-    local hy2_link="hysteria2://${hy2_password}@${domain}:8444?sni=${domain}#${domain}-Hysteria2"
+    # Generate proxy links for display
+    local vless_link="vless://${vless_uuid}@${domain}:443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&alpn=h2,http/1.1&type=tcp#${domain}-VLESS"
+    local hy2_link="hysteria2://${hy2_password}@${domain}:50000?sni=${domain}&alpn=h3#${domain}-Hysteria2"
     
     echo ""
     log_success "Node Installed!"
     echo ""
-    echo -e "  ${ARROW} Node URL:     ${CYAN}https://${domain}${NC}"
-    echo -e "  ${ARROW} AdGuard Home: ${CYAN}https://${domain}/adguard/${NC}"
-    echo -e "  ${ARROW} API Path:     ${CYAN}/${path_prefix}/api/v1/${NC}"
+    echo -e "  ${ARROW} Node Domain:  ${CYAN}${domain}${NC}"
+    echo -e "  ${ARROW} Hidden Path:  ${CYAN}/${path_prefix}${NC}"
     echo ""
     echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}  ${BOLD}PROXY CONFIGURATIONS${NC}                                         ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${BOLD}PROXY CONFIGURATIONS (New Architecture)${NC}                      ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${MAGENTA}║${NC}  ${CYAN}VLESS + XTLS-Vision (Port 8443)${NC}                              ${MAGENTA}║${NC}"
-    echo -e "${MAGENTA}║${NC}  UUID: ${YELLOW}${proxy_uuid}${NC}              ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${CYAN}VLESS + XTLS-Vision + TLS (Port 443)${NC}                         ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  UUID: ${YELLOW}${vless_uuid}${NC}              ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${GREEN}✓${NC} Standard HTTPS port (more stealthy)                       ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${MAGENTA}║${NC}  ${CYAN}Hysteria2 (Port 8444)${NC}                                        ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${CYAN}Hysteria2 (Port 50000-60000 UDP)${NC}                             ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}║${NC}  Password: ${YELLOW}${hy2_password}${NC}                        ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  ${GREEN}✓${NC} Port hopping enabled (anti-blocking)                      ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${BOLD}Share Links (copy to client):${NC}"
@@ -880,6 +999,9 @@ EOF
     echo ""
     echo -e "${GREEN}Hysteria2:${NC}"
     echo -e "${hy2_link}"
+    echo ""
+    echo -e "${YELLOW}Note:${NC} ACME certificate will be auto-issued on first connection."
+    echo -e "      Check logs if needed: ${CYAN}docker logs sui-singbox${NC}"
     echo ""
     
     # Offer firewall configuration
@@ -902,33 +1024,34 @@ configure_firewall_prompt() {
 configure_firewall() {
     log_step "Configuring firewall..."
     
-    # Default ports to allow
-    local default_ports="22 80 443 53 8443 8444"
+    # Default ports to allow (new architecture)
+    local default_ports="22 80 443 53"
+    local default_ranges="50000-60000"
     
     echo ""
     echo -e "  ${CYAN}Default allowed ports:${NC}"
-    echo -e "    22    - SSH"
-    echo -e "    80    - HTTP (Caddy)"
-    echo -e "    443   - HTTPS (Caddy)"
-    echo -e "    53    - DNS (AdGuard)"
-    echo -e "    8443  - VLESS proxy"
-    echo -e "    8444  - Hysteria2 proxy"
+    echo -e "    22         - SSH"
+    echo -e "    80         - HTTP (ACME Challenge)"
+    echo -e "    443        - HTTPS (VLESS + Sing-box)"
+    echo -e "    53         - DNS (AdGuard)"
+    echo -e "    50000-60000- Hysteria2 UDP (port hopping)"
     echo ""
     echo -e "  ${YELLOW}Ports that will be BLOCKED:${NC}"
-    echo -e "    3000  - AdGuard Home Web UI (access via https://domain/adguard/)"
+    echo -e "    3000       - AdGuard Home Web UI (access via hidden path)"
     echo ""
     
-    read -r -p "  Additional ports to allow (space-separated, e.g., '8445 8446-8450'): " extra_ports < /dev/tty
+    read -r -p "  Additional ports to allow (space-separated, e.g., '8080 9000-9100'): " extra_ports < /dev/tty
     
     local all_ports="$default_ports $extra_ports"
+    local all_ranges="$default_ranges"
     
     # Detect firewall tool
     if command -v ufw &>/dev/null; then
-        configure_ufw "$all_ports"
+        configure_ufw "$all_ports" "$all_ranges"
     elif command -v firewall-cmd &>/dev/null; then
-        configure_firewalld "$all_ports"
+        configure_firewalld "$all_ports" "$all_ranges"
     elif command -v iptables &>/dev/null; then
-        configure_iptables "$all_ports"
+        configure_iptables "$all_ports" "$all_ranges"
     else
         log_warn "No supported firewall tool found (ufw/firewalld/iptables)"
         log_info "Please configure firewall manually"
@@ -940,6 +1063,7 @@ configure_firewall() {
 
 configure_ufw() {
     local ports="$1"
+    local ranges="$2"
     log_info "Configuring UFW..."
     
     # Reset UFW
@@ -959,6 +1083,12 @@ configure_ufw() {
             ufw allow "$port" >/dev/null 2>&1
         fi
         echo -e "    ${CHECK} Allowed port $port"
+    done
+    
+    # Allow port ranges (for Hysteria2)
+    for range in $ranges; do
+        ufw allow "$range/udp" >/dev/null 2>&1
+        echo -e "    ${CHECK} Allowed UDP range $range"
     done
     
     # Enable UFW
