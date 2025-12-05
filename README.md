@@ -40,7 +40,7 @@ dig +short node1.example.com
 ### Step 1: Install Master
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/Eng/install.sh | sudo bash -s -- --master
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --master
 ```
 
 > 📝 **Save the Cluster Secret** - only shown once during installation!
@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/Eng/install.sh | sudo b
 On each node server:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/Eng/install.sh | sudo bash -s -- --node
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --node
 ```
 
 Enter the Cluster Secret when prompted.
@@ -71,17 +71,17 @@ You can run both Master and Node on the same server using a shared Caddy gateway
 ### Option 1: One-Click Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/Eng/install.sh | sudo bash -s -- --both
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --both
 ```
 
 ### Option 2: Step by Step
 
 ```bash
 # 1. Install Master first
-curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/Eng/install.sh | sudo bash -s -- --master
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --master
 
 # 2. Install Node (auto-detects Master, uses shared gateway)
-curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/Eng/install.sh | sudo bash -s -- --node
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --node
 
 # 3. Add the Node in Master panel
 ```
@@ -135,7 +135,7 @@ cd /opt/sui-solo/node && docker compose restart
 ### Uninstall
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/Eng/install.sh | sudo bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo bash -s -- --uninstall
 ```
 
 ---

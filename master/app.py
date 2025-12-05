@@ -22,7 +22,7 @@ SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 SALT = "SUI_Solo_Secured_2025"
 VERSION = "1.9.1"
 GITHUB_REPO = "https://github.com/pjonix/SUIS"
-GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/Eng"
+GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/main"
 
 # Regex patterns
 DOMAIN_PATTERN = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-\.]{0,253}[a-zA-Z0-9])?$')
@@ -322,11 +322,11 @@ def update_master():
                 cd /opt/sui-solo/master
                 curl -fsSL https://github.com/pjonix/SUIS/archive/Eng.zip -o /tmp/update.zip
                 unzip -o /tmp/update.zip -d /tmp/
-                cp /tmp/SUIS-Eng/master/app.py ./app.py.new
-                cp /tmp/SUIS-Eng/master/templates/index.html ./templates/index.html.new
+                cp /tmp/SUIS-main/master/app.py ./app.py.new
+                cp /tmp/SUIS-main/master/templates/index.html ./templates/index.html.new
                 mv ./app.py.new ./app.py
                 mv ./templates/index.html.new ./templates/index.html
-                rm -rf /tmp/update.zip /tmp/SUIS-Eng
+                rm -rf /tmp/update.zip /tmp/SUIS-main
             '''],
             capture_output=True, text=True, timeout=60
         )
