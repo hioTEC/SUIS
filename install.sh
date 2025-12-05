@@ -20,9 +20,37 @@ set -e
 #=============================================================================
 readonly VERSION="1.0.0"
 readonly PROJECT_NAME="SUI Solo"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
 readonly NODE_INSTALL_DIR="/opt/sui-solo/node"
+
+# Detect script directory - handle both direct run and extracted zip scenarios
+detect_script_dir() {
+    local dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Check if master/ and node/ directories exist in current location
+    if [[ -d "$dir/master" && -d "$dir/node" ]]; then
+        echo "$dir"
+        return 0
+    fi
+    
+    # Check if we're inside an extracted zip folder (e.g., SUIS-main/)
+    # Look for master/ and node/ in parent directory
+    if [[ -d "$dir/../master" && -d "$dir/../node" ]]; then
+        echo "$(cd "$dir/.." && pwd)"
+        return 0
+    fi
+    
+    # Check current working directory
+    if [[ -d "./master" && -d "./node" ]]; then
+        echo "$(pwd)"
+        return 0
+    fi
+    
+    # Return original dir and let validation handle the error
+    echo "$dir"
+}
+
+SCRIPT_DIR="$(detect_script_dir)"
 
 # Colors
 readonly RED='\033[0;31m'
@@ -118,6 +146,39 @@ check_root() {
     echo -e "  ${CHECK} Running as root"
 }
 
+check_source_files() {
+    log_step "Checking source files..."
+    local errors=0
+    
+    if [[ ! -d "${SCRIPT_DIR}/master" ]]; then
+        echo -e "  ${CROSS} Missing: ${RED}master/${NC} directory"
+        errors=$((errors + 1))
+    else
+        echo -e "  ${CHECK} Found master/ directory"
+    fi
+    
+    if [[ ! -d "${SCRIPT_DIR}/node" ]]; then
+        echo -e "  ${CROSS} Missing: ${RED}node/${NC} directory"
+        errors=$((errors + 1))
+    else
+        echo -e "  ${CHECK} Found node/ directory"
+    fi
+    
+    if [[ $errors -gt 0 ]]; then
+        echo ""
+        log_error "Source files not found in: ${SCRIPT_DIR}"
+        echo ""
+        echo -e "  ${WARN} If you downloaded a ZIP from GitHub, make sure to:"
+        echo -e "      1. Extract the ZIP file: ${YELLOW}unzip SUIS-main.zip${NC}"
+        echo -e "      2. Enter the extracted directory: ${YELLOW}cd SUIS-main${NC}"
+        echo -e "      3. Run the script: ${YELLOW}sudo ./install.sh${NC}"
+        echo ""
+        exit 1
+    fi
+    
+    echo -e "  ${CHECK} Source directory: ${CYAN}${SCRIPT_DIR}${NC}"
+}
+
 check_os() {
     log_step "Checking operating system..."
     if [[ -f /etc/os-release ]]; then
@@ -148,6 +209,25 @@ check_dependencies() {
     
     check_command "curl" "curl" || missing+=("curl")
     check_command "openssl" "openssl" || missing+=("openssl")
+    check_command "unzip" "unzip" || missing+=("unzip")
+    
+    # Install missing packages first (before Docker check)
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log_info "Installing missing packages: ${missing[*]}"
+        if command -v apt-get &> /dev/null; then
+            apt-get update -qq && apt-get install -y -qq "${missing[@]}"
+        elif command -v yum &> /dev/null; then
+            yum install -y -q "${missing[@]}"
+        elif command -v dnf &> /dev/null; then
+            dnf install -y -q "${missing[@]}"
+        elif command -v pacman &> /dev/null; then
+            pacman -S --noconfirm "${missing[@]}"
+        elif command -v apk &> /dev/null; then
+            apk add --quiet "${missing[@]}"
+        else
+            log_warn "Could not auto-install packages. Please install manually: ${missing[*]}"
+        fi
+    fi
     
     if ! check_command "docker" "Docker"; then
         echo ""
@@ -166,15 +246,6 @@ check_dependencies() {
     else
         log_error "Docker Compose is required."
         exit 1
-    fi
-    
-    if [[ ${#missing[@]} -gt 0 && ! " ${missing[*]} " =~ " docker " ]]; then
-        log_info "Installing: ${missing[*]}"
-        if command -v apt-get &> /dev/null; then
-            apt-get update -qq && apt-get install -y -qq "${missing[@]}"
-        elif command -v yum &> /dev/null; then
-            yum install -y -q "${missing[@]}"
-        fi
     fi
     
     echo ""
@@ -572,6 +643,7 @@ main() {
     print_banner
     check_root
     check_os
+    check_source_files
     check_dependencies
     show_menu
 }
@@ -591,8 +663,8 @@ case "${1:-}" in
         exit 0
         ;;
     --version|-v) echo "${PROJECT_NAME} v${VERSION}"; exit 0 ;;
-    --master) print_banner; check_root; check_dependencies; install_master; exit 0 ;;
-    --node) print_banner; check_root; check_dependencies; install_node; exit 0 ;;
+    --master) print_banner; check_root; check_source_files; check_dependencies; install_master; exit 0 ;;
+    --node) print_banner; check_root; check_source_files; check_dependencies; install_node; exit 0 ;;
     --status) check_root; show_status; exit 0 ;;
     --uninstall) print_banner; check_root; uninstall; exit 0 ;;
     "") main ;;
