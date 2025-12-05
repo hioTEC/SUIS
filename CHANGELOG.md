@@ -13,6 +13,9 @@ All notable changes to SUI Solo will be documented in this file.
 
 ### Fixed
 - Fixed Master update function: use Python `requests` instead of `curl` (not available in container)
+- **Fixed service status showing "not found"**: Installed docker-ce-cli in agent container
+  - Agent can now properly check container status via Docker CLI
+  - Services (singbox, adguard) now show correct "running" status
 
 ---
 
