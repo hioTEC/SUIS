@@ -2,6 +2,14 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.8] - 2025-12-06
+
+### Fixed
+- Changed all GitHub download links from Eng branch to main branch
+- Fixed install.sh, master/app.py, node/agent.py update URLs
+
+---
+
 ## [1.9.7] - 2025-12-06
 
 ### Fixed
