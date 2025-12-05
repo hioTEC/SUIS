@@ -330,24 +330,14 @@
 
     <!-- Firewall Modal -->
     <div class="modal" id="firewallModal">
-        <div class="modal-content" style="max-width: 550px;">
+        <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header">
                 <h3>🔥 Firewall Configuration</h3>
                 <button class="modal-close" onclick="hideModal('firewallModal')">&times;</button>
             </div>
-            <input type="hidden" id="firewallNodeId">
             <div id="firewallContent">Loading...</div>
-            <div class="form-group" style="margin-top: 1rem;">
-                <label>Allowed Ports (one per line or comma-separated)</label>
-                <textarea id="firewallPorts" placeholder="22&#10;80&#10;443&#10;53&#10;8443&#10;8444&#10;8445-8450" style="min-height: 150px; font-family: monospace;"></textarea>
-                <p style="font-size: 0.7rem; color: #64748b; margin-top: 0.5rem;">
-                    Supports port ranges like 8445-8450 for Hysteria2 multi-port.<br>
-                    Default: 22 (SSH), 80, 443 (HTTPS), 53 (DNS), 8443 (VLESS), 8444 (Hysteria2)
-                </p>
-            </div>
             <div class="form-actions" style="margin-top: 1rem;">
-                <button class="btn btn-outline" onclick="hideModal('firewallModal')">Cancel</button>
-                <button class="btn btn-danger" onclick="applyFirewall()">Apply Firewall Rules</button>
+                <button class="btn btn-outline" onclick="hideModal('firewallModal')">Close</button>
             </div>
         </div>
     </div>
@@ -900,78 +890,61 @@
 
         // Firewall functions
         async function showFirewallModal(nodeId) {
-            document.getElementById('firewallNodeId').value = nodeId;
-            document.getElementById('firewallContent').innerHTML = 'Loading firewall status...';
-            document.getElementById('firewallPorts').value = '';
+            document.getElementById('firewallContent').innerHTML = 'Loading...';
             document.getElementById('firewallModal').classList.add('active');
             
             try {
                 const resp = await fetch(`/api/nodes/${nodeId}/firewall`);
                 const data = await resp.json();
                 
-                if (data.error && data.error !== 'No firewall detected') {
-                    document.getElementById('firewallContent').innerHTML = `<p style="color: #fca5a5;">Error: ${data.error}</p>`;
-                    return;
-                }
-                
                 let html = `
-                    <div style="margin-bottom: 1rem;">
-                        <p style="font-size: 0.875rem;">
-                            <strong>Firewall Type:</strong> ${data.type || 'Not detected'}<br>
-                            <strong>Status:</strong> <span style="color: ${data.enabled ? '#86efac' : '#fca5a5'};">${data.enabled ? 'Active' : 'Inactive'}</span>
-                        </p>
-                    </div>
+                    <p style="font-size: 0.875rem; color: #94a3b8; margin-bottom: 1rem;">
+                        ${data.message || 'Configure firewall via SSH on the server.'}
+                    </p>
+                    <p style="font-size: 0.75rem; margin-bottom: 1rem;">
+                        <strong>Recommended ports:</strong> ${(data.ports || []).join(', ')}
+                    </p>
                 `;
                 
-                if (data.ports && data.ports.length > 0) {
-                    html += `<p style="font-size: 0.75rem; color: #94a3b8;">Current allowed ports: ${data.ports.join(', ')}</p>`;
-                    document.getElementById('firewallPorts').value = data.ports.join('\n');
-                } else {
-                    // Default ports
-                    document.getElementById('firewallPorts').value = '22\n80\n443\n53\n8443\n8444';
+                if (data.commands) {
+                    html += `
+                        <div style="margin-bottom: 1rem;">
+                            <label style="font-size: 0.875rem; color: #94a3b8;">Select your firewall type:</label>
+                            <select id="fwType" onchange="updateFwCommands()" style="width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem; color: #e2e8f0; margin-top: 0.5rem;">
+                                <option value="ufw">UFW (Ubuntu/Debian)</option>
+                                <option value="firewalld">Firewalld (CentOS/RHEL)</option>
+                                <option value="iptables">iptables</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Commands to run via SSH:</label>
+                            <textarea id="fwCommands" readonly style="min-height: 200px; font-family: monospace; font-size: 0.75rem; background: #0f172a;">${data.commands.ufw}</textarea>
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="copyFwCommands()">📋 Copy Commands</button>
+                    `;
+                    
+                    // Store commands for switching
+                    window.fwCommandsData = data.commands;
                 }
                 
                 document.getElementById('firewallContent').innerHTML = html;
             } catch (err) {
-                document.getElementById('firewallContent').innerHTML = `<p style="color: #fca5a5;">Failed to load firewall status</p>`;
+                document.getElementById('firewallContent').innerHTML = `<p style="color: #fca5a5;">Failed to load firewall info</p>`;
             }
         }
         
-        async function applyFirewall() {
-            const nodeId = document.getElementById('firewallNodeId').value;
-            const portsText = document.getElementById('firewallPorts').value;
-            
-            // Parse ports (support newlines, commas, spaces)
-            const ports = portsText.split(/[\n,\s]+/).filter(p => p.trim());
-            
-            if (ports.length === 0) {
-                showToast('Please enter at least one port', 'error');
-                return;
+        function updateFwCommands() {
+            const type = document.getElementById('fwType').value;
+            if (window.fwCommandsData && window.fwCommandsData[type]) {
+                document.getElementById('fwCommands').value = window.fwCommandsData[type];
             }
-            
-            if (!confirm(`Apply firewall rules? This will:\n- Block all incoming traffic except specified ports\n- Ports to allow: ${ports.join(', ')}\n\nMake sure SSH port (22) is included!`)) {
-                return;
-            }
-            
-            showToast('Applying firewall rules...');
-            
-            try {
-                const resp = await fetch(`/api/nodes/${nodeId}/firewall`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ports})
-                });
-                const data = await resp.json();
-                
-                if (data.success) {
-                    showToast('Firewall rules applied successfully');
-                    hideModal('firewallModal');
-                } else {
-                    showToast(`Failed: ${data.error || data.message}`, 'error');
-                }
-            } catch (err) {
-                showToast('Failed to apply firewall rules', 'error');
-            }
+        }
+        
+        function copyFwCommands() {
+            const el = document.getElementById('fwCommands');
+            el.select();
+            document.execCommand('copy');
+            showToast('Commands copied to clipboard!');
         }
 
         // Auto-refresh status on page load

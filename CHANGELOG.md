@@ -2,10 +2,21 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
-## [1.9.21] - 2025-12-06
+## [1.9.22] - 2025-12-06
+
+### Changed
+- **Firewall management redesigned**: Now provides SSH commands instead of direct control
+  - Shows ready-to-use commands for UFW, firewalld, and iptables
+  - Select firewall type from dropdown
+  - Copy commands to clipboard
+  - More secure (doesn't require privileged container)
 
 ### Fixed
 - Fixed Master update function: use Python `requests` instead of `curl` (not available in container)
+
+---
+
+## [1.9.21] - 2025-12-06
 
 ### Added
 - **Firewall management from Master panel**: 

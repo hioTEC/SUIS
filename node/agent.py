@@ -372,126 +372,78 @@ def get_proxies():
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.9.21'})
+    return jsonify({'version': '1.9.22'})
 
 
 # ============================================================================
-# FIREWALL MANAGEMENT
+# FIREWALL MANAGEMENT (provides commands for manual configuration)
 # ============================================================================
 FIREWALL_CONFIG_FILE = os.path.join(CONFIG_DIR, 'firewall.json')
-
-def detect_firewall():
-    """Detect which firewall is available"""
-    for fw in ['ufw', 'firewall-cmd', 'iptables']:
-        result = subprocess.run(['which', fw], capture_output=True)
-        if result.returncode == 0:
-            return fw.replace('-cmd', 'd')  # firewall-cmd -> firewalld
-    return None
-
-def get_firewall_status():
-    """Get current firewall status and rules"""
-    fw = detect_firewall()
-    if not fw:
-        return {'enabled': False, 'type': None, 'ports': [], 'error': 'No firewall detected'}
-    
-    try:
-        if fw == 'ufw':
-            result = subprocess.run(['ufw', 'status', 'numbered'], capture_output=True, text=True, timeout=10)
-            enabled = 'Status: active' in result.stdout
-            # Parse ports from ufw output
-            ports = []
-            for line in result.stdout.split('\n'):
-                if 'ALLOW' in line:
-                    parts = line.split()
-                    if parts:
-                        port = parts[1].replace('/tcp', '').replace('/udp', '')
-                        if port not in ports:
-                            ports.append(port)
-            return {'enabled': enabled, 'type': 'ufw', 'ports': ports, 'raw': result.stdout}
-        
-        elif fw == 'firewalld':
-            result = subprocess.run(['firewall-cmd', '--list-ports'], capture_output=True, text=True, timeout=10)
-            ports = [p.split('/')[0] for p in result.stdout.strip().split() if p]
-            return {'enabled': True, 'type': 'firewalld', 'ports': ports}
-        
-        elif fw == 'iptables':
-            result = subprocess.run(['iptables', '-L', 'INPUT', '-n'], capture_output=True, text=True, timeout=10)
-            ports = []
-            for line in result.stdout.split('\n'):
-                if 'dpt:' in line:
-                    port = line.split('dpt:')[1].split()[0]
-                    if port not in ports:
-                        ports.append(port)
-            return {'enabled': True, 'type': 'iptables', 'ports': ports}
-    except Exception as e:
-        return {'enabled': False, 'type': fw, 'ports': [], 'error': str(e)}
-    
-    return {'enabled': False, 'type': fw, 'ports': []}
-
-def apply_firewall_rules(ports):
-    """Apply firewall rules with specified ports"""
-    fw = detect_firewall()
-    if not fw:
-        return False, 'No firewall detected'
-    
-    try:
-        if fw == 'ufw':
-            # Reset and configure UFW
-            subprocess.run(['ufw', '--force', 'reset'], capture_output=True, timeout=30)
-            subprocess.run(['ufw', 'default', 'deny', 'incoming'], capture_output=True, timeout=10)
-            subprocess.run(['ufw', 'default', 'allow', 'outgoing'], capture_output=True, timeout=10)
-            
-            for port in ports:
-                subprocess.run(['ufw', 'allow', str(port)], capture_output=True, timeout=10)
-            
-            subprocess.run(['ufw', '--force', 'enable'], capture_output=True, timeout=10)
-            return True, 'UFW configured'
-        
-        elif fw == 'firewalld':
-            # Remove existing ports and add new ones
-            result = subprocess.run(['firewall-cmd', '--list-ports'], capture_output=True, text=True, timeout=10)
-            for port in result.stdout.strip().split():
-                subprocess.run(['firewall-cmd', '--remove-port', port, '--permanent'], capture_output=True, timeout=10)
-            
-            for port in ports:
-                subprocess.run(['firewall-cmd', '--add-port', f'{port}/tcp', '--permanent'], capture_output=True, timeout=10)
-                subprocess.run(['firewall-cmd', '--add-port', f'{port}/udp', '--permanent'], capture_output=True, timeout=10)
-            
-            subprocess.run(['firewall-cmd', '--reload'], capture_output=True, timeout=10)
-            return True, 'firewalld configured'
-        
-        elif fw == 'iptables':
-            # Flush and configure iptables
-            subprocess.run(['iptables', '-F', 'INPUT'], capture_output=True, timeout=10)
-            subprocess.run(['iptables', '-P', 'INPUT', 'DROP'], capture_output=True, timeout=10)
-            subprocess.run(['iptables', '-A', 'INPUT', '-i', 'lo', '-j', 'ACCEPT'], capture_output=True, timeout=10)
-            subprocess.run(['iptables', '-A', 'INPUT', '-m', 'state', '--state', 'ESTABLISHED,RELATED', '-j', 'ACCEPT'], capture_output=True, timeout=10)
-            
-            for port in ports:
-                subprocess.run(['iptables', '-A', 'INPUT', '-p', 'tcp', '--dport', str(port), '-j', 'ACCEPT'], capture_output=True, timeout=10)
-                subprocess.run(['iptables', '-A', 'INPUT', '-p', 'udp', '--dport', str(port), '-j', 'ACCEPT'], capture_output=True, timeout=10)
-            
-            return True, 'iptables configured'
-    
-    except Exception as e:
-        return False, str(e)
-    
-    return False, 'Unknown error'
 
 
 @app.route(f'/{PATH_PREFIX}/api/v1/firewall', methods=['GET'])
 @require_auth
 @rate_limit(api_limiter)
 def get_firewall():
-    """Get firewall status"""
-    return jsonify(get_firewall_status())
+    """Get firewall configuration help"""
+    # Load saved config if exists
+    saved_ports = []
+    try:
+        if os.path.exists(FIREWALL_CONFIG_FILE):
+            with open(FIREWALL_CONFIG_FILE) as f:
+                saved_ports = json.load(f).get('ports', [])
+    except:
+        pass
+    
+    default_ports = ['22', '80', '443', '53', '8443', '8444']
+    
+    return jsonify({
+        'type': 'manual',
+        'enabled': None,
+        'ports': saved_ports or default_ports,
+        'message': 'Firewall must be configured via SSH on the server',
+        'commands': {
+            'ufw': f'''# UFW (Ubuntu/Debian)
+sudo ufw reset
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22
+sudo ufw allow 80
+sudo ufw allow 443
+sudo ufw allow 53
+sudo ufw allow 8443
+sudo ufw allow 8444
+sudo ufw enable''',
+            'firewalld': f'''# Firewalld (CentOS/RHEL)
+sudo firewall-cmd --permanent --add-port=22/tcp
+sudo firewall-cmd --permanent --add-port=80/tcp
+sudo firewall-cmd --permanent --add-port=443/tcp
+sudo firewall-cmd --permanent --add-port=53/tcp
+sudo firewall-cmd --permanent --add-port=53/udp
+sudo firewall-cmd --permanent --add-port=8443/tcp
+sudo firewall-cmd --permanent --add-port=8444/udp
+sudo firewall-cmd --reload''',
+            'iptables': f'''# iptables
+sudo iptables -F INPUT
+sudo iptables -P INPUT DROP
+sudo iptables -A INPUT -i lo -j ACCEPT
+sudo iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 53 -j ACCEPT
+sudo iptables -A INPUT -p udp --dport 53 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 8443 -j ACCEPT
+sudo iptables -A INPUT -p udp --dport 8444 -j ACCEPT'''
+        }
+    })
 
 
 @app.route(f'/{PATH_PREFIX}/api/v1/firewall', methods=['POST'])
 @require_auth
 @rate_limit(api_limiter)
 def set_firewall():
-    """Configure firewall with specified ports"""
+    """Save firewall port configuration (for reference only)"""
     data = request.json or {}
     ports = data.get('ports', [])
     
@@ -503,7 +455,6 @@ def set_firewall():
     for port in ports:
         port_str = str(port)
         if '-' in port_str:
-            # Port range
             try:
                 start, end = port_str.split('-')
                 if 1 <= int(start) <= 65535 and 1 <= int(end) <= 65535:
