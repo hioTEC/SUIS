@@ -2,6 +2,25 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.15] - 2025-12-06
+
+### Added
+- **Preset Templates Auto-Init**: Node automatically generates 3 preset proxy configs on first run
+  - VLESS + XTLS-Vision + Reality (port 10000)
+  - VMess + WebSocket (port 10001)
+  - Hysteria2 (port 10002)
+- **Preset Management UI**: New "Presets" button on node cards to toggle templates on/off
+- **Aggregated Subscription**: Master collects all node presets into unified subscription links
+- **Hidden Subscription Path**: Secure subscription URL with hashed path
+- **Auto-Restart on Config Save**: Services automatically restart after config changes
+
+### Changed
+- Subscribe modal now shows both public and hidden subscription URLs
+- Config save now shows progress (Saving... → Restarting...)
+- Improved subscription link generation with proper protocol formats
+
+---
+
 ## [1.9.14] - 2025-12-06
 
 ### Added

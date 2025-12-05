@@ -655,8 +655,9 @@ services:
     container_name: sui-singbox
     restart: unless-stopped
     command: ["run", "-c", "/etc/sing-box/config.json"]
-    volumes: [./config/singbox:/etc/sing-box:ro]
+    volumes: [./config/singbox:/etc/sing-box]
     networks: [sui-node-net]
+    ports: ["8443:8443", "8444:8444/udp"]
     cap_add: [NET_ADMIN]
     cap_drop: [ALL]
   adguard:
@@ -675,9 +676,52 @@ networks:
     external: true
 EOF
 
-    [[ ! -f "$NODE_INSTALL_DIR/config/singbox/config.json" ]] && cat > "$NODE_INSTALL_DIR/config/singbox/config.json" << 'EOF'
-{"log":{"level":"info"},"inbounds":[{"type":"mixed","listen":"::","listen_port":1080}],"outbounds":[{"type":"direct"}]}
-EOF
+    # Generate UUID and password for proxies
+    local proxy_uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-/')
+    local hy2_password=$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | sha256sum | cut -c1-32)
+    
+    # Generate self-signed certificate for sing-box
+    log_info "Generating TLS certificate for sing-box..."
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -days 3650 -nodes \
+        -keyout "$NODE_INSTALL_DIR/config/singbox/key.pem" \
+        -out "$NODE_INSTALL_DIR/config/singbox/cert.pem" \
+        -subj "/CN=${domain}" 2>/dev/null
+    
+    # Generate sing-box config with VLESS+Vision and Hysteria2
+    cat > "$NODE_INSTALL_DIR/config/singbox/config.json" << SBEOF
+{
+  "log": {"level": "info"},
+  "inbounds": [
+    {
+      "type": "vless",
+      "tag": "vless-vision",
+      "listen": "::",
+      "listen_port": 8443,
+      "users": [{"uuid": "${proxy_uuid}", "flow": "xtls-rprx-vision"}],
+      "tls": {
+        "enabled": true,
+        "server_name": "${domain}",
+        "certificate_path": "/etc/sing-box/cert.pem",
+        "key_path": "/etc/sing-box/key.pem"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hysteria2",
+      "listen": "::",
+      "listen_port": 8444,
+      "users": [{"password": "${hy2_password}"}],
+      "tls": {
+        "enabled": true,
+        "server_name": "${domain}",
+        "certificate_path": "/etc/sing-box/cert.pem",
+        "key_path": "/etc/sing-box/key.pem"
+      }
+    }
+  ],
+  "outbounds": [{"type": "direct", "tag": "direct"}]
+}
+SBEOF
     
     generate_adguard_config
     
@@ -686,6 +730,8 @@ CLUSTER_SECRET=${secret}
 NODE_DOMAIN=${domain}
 PATH_PREFIX=${path_prefix}
 ACME_EMAIL=${email}
+PROXY_UUID=${proxy_uuid}
+HY2_PASSWORD=${hy2_password}
 EOF
 
     cd "$NODE_INSTALL_DIR"
@@ -704,12 +750,33 @@ EOF
         start_shared_gateway
     fi
     
+    # Generate proxy links
+    local vless_link="vless://${proxy_uuid}@${domain}:8443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${domain}&type=tcp#${domain}-VLESS"
+    local hy2_link="hysteria2://${hy2_password}@${domain}:8444?sni=${domain}#${domain}-Hysteria2"
+    
     echo ""
     log_success "Node Installed!"
     echo ""
     echo -e "  ${ARROW} Node URL:     ${CYAN}https://${domain}${NC}"
     echo -e "  ${ARROW} AdGuard Home: ${CYAN}https://${domain}/adguard/${NC}"
     echo -e "  ${ARROW} API Path:     ${CYAN}/${path_prefix}/api/v1/${NC}"
+    echo ""
+    echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${MAGENTA}║${NC}  ${BOLD}PROXY CONFIGURATIONS${NC}                                         ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${MAGENTA}║${NC}  ${CYAN}VLESS + XTLS-Vision (Port 8443)${NC}                              ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  UUID: ${YELLOW}${proxy_uuid}${NC}              ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${MAGENTA}║${NC}  ${CYAN}Hysteria2 (Port 8444)${NC}                                        ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}  Password: ${YELLOW}${hy2_password}${NC}                        ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${BOLD}Share Links (copy to client):${NC}"
+    echo -e "${GREEN}VLESS:${NC}"
+    echo -e "${vless_link}"
+    echo ""
+    echo -e "${GREEN}Hysteria2:${NC}"
+    echo -e "${hy2_link}"
     echo ""
 }
 

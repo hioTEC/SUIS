@@ -20,7 +20,7 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 SALT = "SUI_Solo_Secured_2025"
-VERSION = "1.9.14"
+VERSION = "1.9.15"
 GITHUB_REPO = "https://github.com/pjonix/SUIS"
 GITHUB_RAW = "https://raw.githubusercontent.com/pjonix/SUIS/main"
 
@@ -285,16 +285,28 @@ def update_node(node_id):
     return jsonify(call_node_api(nodes[node_id], 'update', 'POST', timeout=120))
 
 
-@app.route('/api/nodes/<node_id>/rebuild', methods=['POST'])
+@app.route('/api/nodes/<node_id>/restart-all', methods=['POST'])
 @rate_limit(auth_limiter)
-def rebuild_node(node_id):
-    """Rebuild and restart all containers on a node"""
+def restart_node_all(node_id):
+    """Restart all containers on a node"""
     if not NODE_ID_PATTERN.match(node_id):
         return jsonify({'error': 'Invalid node ID'}), 400
     nodes = load_nodes()
     if node_id not in nodes:
         return jsonify({'error': 'Node not found'}), 404
-    return jsonify(call_node_api(nodes[node_id], 'rebuild', 'POST', timeout=180))
+    return jsonify(call_node_api(nodes[node_id], 'restart-all', 'POST', timeout=60))
+
+
+@app.route('/api/nodes/<node_id>/proxies')
+@rate_limit(api_limiter)
+def node_proxies(node_id):
+    """Get all proxy configurations from a node"""
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    return jsonify(call_node_api(nodes[node_id], 'proxies'))
 
 
 # Settings & Update APIs
@@ -360,35 +372,27 @@ def update_all_nodes():
     return jsonify(results)
 
 
-@app.route('/api/master/rebuild', methods=['POST'])
+@app.route('/api/master/restart', methods=['POST'])
 @rate_limit(auth_limiter)
-def rebuild_master():
-    """Rebuild and restart Master container"""
+def restart_master():
+    """Restart Master container"""
     try:
         result = subprocess.run(
-            ['sh', '-c', '''
-                cd /opt/sui-solo/master
-                docker compose down
-                docker compose up -d --build
-            '''],
-            capture_output=True, text=True, timeout=180
+            ['sh', '-c', 'cd /opt/sui-solo/master && docker compose restart'],
+            capture_output=True, text=True, timeout=60
         )
         return jsonify({'success': result.returncode == 0, 'output': result.stdout + result.stderr})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
 
-@app.route('/api/gateway/rebuild', methods=['POST'])
+@app.route('/api/gateway/restart', methods=['POST'])
 @rate_limit(auth_limiter)
-def rebuild_gateway():
-    """Rebuild and restart Gateway container"""
+def restart_gateway():
+    """Restart Gateway container"""
     try:
         result = subprocess.run(
-            ['sh', '-c', '''
-                cd /opt/sui-solo/gateway
-                docker compose down
-                docker compose up -d
-            '''],
+            ['sh', '-c', 'cd /opt/sui-solo/gateway && docker compose restart'],
             capture_output=True, text=True, timeout=60
         )
         return jsonify({'success': result.returncode == 0, 'output': result.stdout + result.stderr})
@@ -397,78 +401,171 @@ def rebuild_gateway():
 
 
 # ============================================================================
-# SUBSCRIPTION API
+# SUBSCRIPTION API - Enhanced with Preset Support
 # ============================================================================
+@app.route('/api/nodes/<node_id>/presets')
+@rate_limit(api_limiter)
+def node_presets(node_id):
+    """Get preset configurations from a node"""
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    return jsonify(call_node_api(nodes[node_id], 'presets'))
+
+
+@app.route('/api/nodes/<node_id>/presets', methods=['POST'])
+@rate_limit(api_limiter)
+def update_node_presets(node_id):
+    """Update preset configurations on a node"""
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    return jsonify(call_node_api(nodes[node_id], 'presets', 'POST', request.json))
+
+
+@app.route('/api/nodes/<node_id>/subscribe')
+@rate_limit(api_limiter)
+def node_subscribe(node_id):
+    """Get subscription links from a specific node"""
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    return jsonify(call_node_api(nodes[node_id], 'subscribe'))
+
+
 @app.route('/api/subscribe')
 @rate_limit(api_limiter)
 def subscribe():
-    """Generate aggregated subscription for all online nodes"""
+    """Generate aggregated subscription for all nodes with presets"""
+    import base64
     nodes = load_nodes()
     format_type = request.args.get('format', 'base64')  # base64, clash, singbox
     
-    configs = []
-    for node_id, node in nodes.items():
-        if node.get('status') == 'online':
-            # Get node's singbox config
-            result = call_node_api(node, 'config/singbox')
-            if 'content' in result:
-                try:
-                    config = json.loads(result['content'])
-                    config['_node_name'] = node['name']
-                    config['_node_domain'] = node['domain']
-                    configs.append(config)
-                except:
-                    pass
+    all_links = []
+    all_proxies = []
     
-    if format_type == 'singbox':
-        # Return merged sing-box config
-        merged = {
-            'log': {'level': 'info'},
-            'inbounds': [],
-            'outbounds': [{'type': 'direct', 'tag': 'direct'}],
-            'route': {'rules': [], 'final': 'direct'}
-        }
-        for cfg in configs:
-            if 'outbounds' in cfg:
-                for ob in cfg['outbounds']:
-                    if ob.get('type') not in ['direct', 'block']:
-                        ob['tag'] = f"{cfg.get('_node_name', 'node')}-{ob.get('tag', 'proxy')}"
-                        merged['outbounds'].append(ob)
-        return jsonify(merged)
+    for node_id, node in nodes.items():
+        # Try to get preset-based subscription first
+        result = call_node_api(node, 'subscribe')
+        if 'links' in result:
+            for link_info in result['links']:
+                link_info['node_name'] = node['name']
+                link_info['node_domain'] = node['domain']
+                all_links.append(link_info)
+    
+    if format_type == 'base64':
+        # Return base64 encoded links
+        links_text = '\n'.join([l['link'] for l in all_links])
+        from flask import Response
+        return Response(base64.b64encode(links_text.encode()).decode(), mimetype='text/plain')
     
     elif format_type == 'clash':
         # Return Clash format
         proxies = []
-        for cfg in configs:
-            if 'outbounds' in cfg:
-                for ob in cfg['outbounds']:
-                    if ob.get('type') == 'vless':
-                        proxies.append({
-                            'name': f"{cfg.get('_node_name', 'node')}",
-                            'type': 'vless',
-                            'server': cfg.get('_node_domain', ''),
-                            'port': ob.get('server_port', 443),
-                            'uuid': ob.get('uuid', ''),
-                            'tls': True
-                        })
+        for link_info in all_links:
+            proxy = {
+                'name': f"{link_info['node_name']}-{link_info['type']}",
+                'server': link_info['node_domain'],
+                'port': link_info['port']
+            }
+            if 'vless' in link_info['type']:
+                proxy['type'] = 'vless'
+                # Parse UUID from link
+                if link_info['link'].startswith('vless://'):
+                    proxy['uuid'] = link_info['link'].split('://')[1].split('@')[0]
+                proxy['tls'] = True
+                if 'vision' in link_info['type']:
+                    proxy['flow'] = 'xtls-rprx-vision'
+            elif 'vmess' in link_info['type']:
+                proxy['type'] = 'vmess'
+                # Decode vmess link
+                try:
+                    vmess_data = json.loads(base64.b64decode(link_info['link'].replace('vmess://', '')))
+                    proxy['uuid'] = vmess_data.get('id', '')
+                    proxy['alterId'] = int(vmess_data.get('aid', 0))
+                    proxy['network'] = vmess_data.get('net', 'tcp')
+                    if proxy['network'] == 'ws':
+                        proxy['ws-opts'] = {'path': vmess_data.get('path', '/')}
+                    proxy['tls'] = vmess_data.get('tls') == 'tls'
+                except:
+                    continue
+            elif 'hysteria2' in link_info['type']:
+                proxy['type'] = 'hysteria2'
+                # Parse password from link
+                if link_info['link'].startswith('hysteria2://'):
+                    proxy['password'] = link_info['link'].split('://')[1].split('@')[0]
+                proxy['sni'] = link_info['node_domain']
+            proxies.append(proxy)
+        
         clash_config = {
             'proxies': proxies,
-            'proxy-groups': [{'name': 'auto', 'type': 'url-test', 'proxies': [p['name'] for p in proxies]}]
+            'proxy-groups': [{
+                'name': 'auto',
+                'type': 'url-test',
+                'proxies': [p['name'] for p in proxies],
+                'url': 'http://www.gstatic.com/generate_204',
+                'interval': 300
+            }]
         }
         return jsonify(clash_config)
     
-    else:
-        # Return base64 encoded links
-        import base64
-        links = []
-        for cfg in configs:
-            if 'outbounds' in cfg:
-                for ob in cfg['outbounds']:
-                    if ob.get('type') == 'vless':
-                        link = f"vless://{ob.get('uuid', '')}@{cfg.get('_node_domain', '')}:{ob.get('server_port', 443)}?type=tcp&security=tls#{cfg.get('_node_name', 'node')}"
-                        links.append(link)
-        result = '\n'.join(links)
-        return base64.b64encode(result.encode()).decode()
+    elif format_type == 'singbox':
+        # Return sing-box outbound format
+        outbounds = []
+        for link_info in all_links:
+            tag = f"{link_info['node_name']}-{link_info['type']}"
+            outbound = {'tag': tag, 'server': link_info['node_domain'], 'server_port': link_info['port']}
+            
+            if 'vless' in link_info['type']:
+                outbound['type'] = 'vless'
+                if link_info['link'].startswith('vless://'):
+                    outbound['uuid'] = link_info['link'].split('://')[1].split('@')[0]
+                if 'vision' in link_info['type']:
+                    outbound['flow'] = 'xtls-rprx-vision'
+                    outbound['tls'] = {
+                        'enabled': True,
+                        'server_name': 'www.microsoft.com',
+                        'reality': {'enabled': True, 'public_key': '', 'short_id': ''}
+                    }
+                    # Parse reality params from link
+                    if 'pbk=' in link_info['link']:
+                        outbound['tls']['reality']['public_key'] = link_info['link'].split('pbk=')[1].split('&')[0]
+                    if 'sid=' in link_info['link']:
+                        outbound['tls']['reality']['short_id'] = link_info['link'].split('sid=')[1].split('&')[0]
+            elif 'vmess' in link_info['type']:
+                outbound['type'] = 'vmess'
+                try:
+                    vmess_data = json.loads(base64.b64decode(link_info['link'].replace('vmess://', '')))
+                    outbound['uuid'] = vmess_data.get('id', '')
+                    if vmess_data.get('net') == 'ws':
+                        outbound['transport'] = {'type': 'ws', 'path': vmess_data.get('path', '/')}
+                    if vmess_data.get('tls') == 'tls':
+                        outbound['tls'] = {'enabled': True, 'server_name': link_info['node_domain']}
+                except:
+                    continue
+            elif 'hysteria2' in link_info['type']:
+                outbound['type'] = 'hysteria2'
+                if link_info['link'].startswith('hysteria2://'):
+                    outbound['password'] = link_info['link'].split('://')[1].split('@')[0]
+                outbound['tls'] = {'enabled': True, 'server_name': link_info['node_domain']}
+            
+            outbounds.append(outbound)
+        
+        singbox_config = {
+            'log': {'level': 'info'},
+            'outbounds': outbounds + [{'type': 'direct', 'tag': 'direct'}],
+            'route': {'final': outbounds[0]['tag'] if outbounds else 'direct'}
+        }
+        return jsonify(singbox_config)
+    
+    # Default: return raw links
+    return jsonify({'links': all_links})
 
 
 @app.route('/api/subscribe/url')
@@ -476,11 +573,25 @@ def subscribe():
 def subscribe_url():
     """Get subscription URL info"""
     master_domain = os.environ.get('MASTER_DOMAIN', 'localhost')
+    hidden_path = get_hidden_path(CLUSTER_SECRET)
     return jsonify({
-        'base64': f"https://{master_domain}/api/subscribe?format=base64",
-        'clash': f"https://{master_domain}/api/subscribe?format=clash",
-        'singbox': f"https://{master_domain}/api/subscribe?format=singbox"
+        'base64': f"https://{master_domain}/{hidden_path}/sub?format=base64",
+        'clash': f"https://{master_domain}/{hidden_path}/sub?format=clash",
+        'singbox': f"https://{master_domain}/{hidden_path}/sub?format=singbox",
+        'public_base64': f"https://{master_domain}/api/subscribe?format=base64",
+        'public_clash': f"https://{master_domain}/api/subscribe?format=clash",
+        'public_singbox': f"https://{master_domain}/api/subscribe?format=singbox"
     })
+
+
+# Hidden subscription endpoint (more secure)
+@app.route(f'/<path:hidden>/sub')
+@rate_limit(api_limiter)
+def hidden_subscribe(hidden):
+    """Hidden subscription endpoint"""
+    if hidden != get_hidden_path(CLUSTER_SECRET):
+        return jsonify({'error': 'Not found'}), 404
+    return subscribe()
 
 
 @app.route('/health')

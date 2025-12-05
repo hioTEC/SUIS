@@ -89,8 +89,8 @@
                 <h2>🔧 System Controls</h2>
             </div>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                <button class="btn btn-success btn-sm" onclick="rebuildMaster()">🔄 Rebuild Master</button>
-                <button class="btn btn-success btn-sm" onclick="rebuildGateway()">🌐 Rebuild Gateway</button>
+                <button class="btn btn-success btn-sm" onclick="restartMaster()">🔄 Restart Master</button>
+                <button class="btn btn-success btn-sm" onclick="restartGateway()">🌐 Restart Gateway</button>
                 <button class="btn btn-warning btn-sm" onclick="updateMaster()">⬆️ Update Master</button>
                 <button class="btn btn-warning btn-sm" onclick="updateAllNodes()">⬆️ Update All Nodes</button>
             </div>
@@ -150,7 +150,8 @@
                         <button class="btn btn-primary btn-sm" onclick="checkStatus('{{ id }}')">Check Status</button>
                         <button class="btn btn-outline btn-sm" onclick="showConfigModal('{{ id }}', 'singbox')">Config</button>
                         <button class="btn btn-outline btn-sm" onclick="showLogsModal('{{ id }}')">Logs</button>
-                        <button class="btn btn-success btn-sm" onclick="rebuildNode('{{ id }}')">Rebuild</button>
+                        <button class="btn btn-outline btn-sm" onclick="showPresetsModal('{{ id }}')">Presets</button>
+                        <button class="btn btn-success btn-sm" onclick="restartNodeAll('{{ id }}')">Restart</button>
                         <button class="btn btn-warning btn-sm" onclick="updateNode('{{ id }}')">Update</button>
                         <button class="btn btn-danger btn-sm" onclick="deleteNode('{{ id }}')">Delete</button>
                     </div>
@@ -191,20 +192,23 @@
 
     <!-- Subscribe Modal -->
     <div class="modal" id="subscribeModal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
                 <h3>📋 Subscription Links</h3>
                 <button class="modal-close" onclick="hideModal('subscribeModal')">&times;</button>
             </div>
+            <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">
+                Aggregated subscription from all nodes with preset templates enabled.
+            </p>
             <div class="form-group">
-                <label>Base64 (v2rayN, Shadowrocket)</label>
+                <label>Base64 (v2rayN, Shadowrocket, NekoBox)</label>
                 <div style="display: flex; gap: 0.5rem;">
                     <input type="text" id="subBase64" readonly style="flex: 1;">
                     <button class="btn btn-sm btn-primary" onclick="copyToClipboard('subBase64')">Copy</button>
                 </div>
             </div>
             <div class="form-group">
-                <label>Clash Format</label>
+                <label>Clash Format (Clash, ClashX, Stash)</label>
                 <div style="display: flex; gap: 0.5rem;">
                     <input type="text" id="subClash" readonly style="flex: 1;">
                     <button class="btn btn-sm btn-primary" onclick="copyToClipboard('subClash')">Copy</button>
@@ -217,8 +221,18 @@
                     <button class="btn btn-sm btn-primary" onclick="copyToClipboard('subSingbox')">Copy</button>
                 </div>
             </div>
+            <div style="border-top: 1px solid #334155; padding-top: 1rem; margin-top: 1rem;">
+                <label style="font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.5rem; display: block;">Hidden Links (More Secure)</label>
+                <div class="form-group">
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="text" id="subHiddenBase64" readonly style="flex: 1;">
+                        <button class="btn btn-sm btn-outline" onclick="copyToClipboard('subHiddenBase64')">Copy</button>
+                    </div>
+                </div>
+            </div>
             <p style="font-size: 0.75rem; color: #64748b; margin-top: 1rem;">
-                💡 Copy the subscription link and paste it into your proxy client.
+                💡 Copy the subscription link and paste it into your proxy client.<br>
+                🔒 Hidden links use a secret path for extra security.
             </p>
         </div>
     </div>
@@ -308,6 +322,22 @@
         </div>
     </div>
 
+    <!-- Presets Modal -->
+    <div class="modal" id="presetsModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>🔧 Preset Templates</h3>
+                <button class="modal-close" onclick="hideModal('presetsModal')">&times;</button>
+            </div>
+            <input type="hidden" id="presetsNodeId">
+            <div id="presetsContent">Loading...</div>
+            <div class="form-actions" style="margin-top: 1rem;">
+                <button class="btn btn-outline" onclick="hideModal('presetsModal')">Close</button>
+                <button class="btn btn-warning" onclick="savePresets()">Save & Apply</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentLogNode = null;
 
@@ -327,9 +357,10 @@
             try {
                 const resp = await fetch('/api/subscribe/url');
                 const data = await resp.json();
-                document.getElementById('subBase64').value = data.base64 || '';
-                document.getElementById('subClash').value = data.clash || '';
-                document.getElementById('subSingbox').value = data.singbox || '';
+                document.getElementById('subBase64').value = data.public_base64 || data.base64 || '';
+                document.getElementById('subClash').value = data.public_clash || data.clash || '';
+                document.getElementById('subSingbox').value = data.public_singbox || data.singbox || '';
+                document.getElementById('subHiddenBase64').value = data.base64 || '';
             } catch (err) {
                 showToast('Failed to load subscription URLs', 'error');
             }
@@ -342,28 +373,146 @@
             showToast('Copied to clipboard!');
         }
 
-        async function rebuildMaster() {
-            if (!confirm('Rebuild Master container? This will restart the control panel.')) return;
-            showToast('Rebuilding Master...');
+        async function restartMaster() {
+            if (!confirm('Restart Master container? This will briefly interrupt the control panel.')) return;
+            showToast('Restarting Master...');
             try {
-                const resp = await fetch('/api/master/rebuild', {method: 'POST'});
+                const resp = await fetch('/api/master/restart', {method: 'POST'});
                 const data = await resp.json();
-                showToast(data.success ? 'Master rebuild initiated. Page will reload...' : `Failed: ${data.error}`, data.success ? 'success' : 'error');
-                if (data.success) setTimeout(() => location.reload(), 10000);
+                showToast(data.success ? 'Master restarting. Page will reload...' : `Failed: ${data.error}`, data.success ? 'success' : 'error');
+                if (data.success) setTimeout(() => location.reload(), 5000);
             } catch (err) {
-                showToast('Rebuild failed', 'error');
+                showToast('Restart failed', 'error');
             }
         }
 
-        async function rebuildGateway() {
-            if (!confirm('Rebuild Gateway container? This may briefly interrupt HTTPS.')) return;
-            showToast('Rebuilding Gateway...');
+        async function restartGateway() {
+            if (!confirm('Restart Gateway container? This may briefly interrupt HTTPS.')) return;
+            showToast('Restarting Gateway...');
             try {
-                const resp = await fetch('/api/gateway/rebuild', {method: 'POST'});
+                const resp = await fetch('/api/gateway/restart', {method: 'POST'});
                 const data = await resp.json();
-                showToast(data.success ? 'Gateway rebuilt successfully' : `Failed: ${data.error}`, data.success ? 'success' : 'error');
+                showToast(data.success ? 'Gateway restarted successfully' : `Failed: ${data.error}`, data.success ? 'success' : 'error');
             } catch (err) {
-                showToast('Rebuild failed', 'error');
+                showToast('Restart failed', 'error');
+            }
+        }
+
+        async function restartNodeAll(id) {
+            if (!confirm('Restart all containers on this node?')) return;
+            showToast('Restarting node containers...');
+            try {
+                const resp = await fetch(`/api/nodes/${id}/restart-all`, {method: 'POST'});
+                const data = await resp.json();
+                showToast(data.success ? 'Node containers restarted' : `Failed: ${data.error || data.output}`, data.success ? 'success' : 'error');
+                if (data.success) setTimeout(() => checkStatus(id), 3000);
+            } catch (err) {
+                showToast('Restart failed', 'error');
+            }
+        }
+
+        async function showPresetsModal(nodeId) {
+            document.getElementById('presetsNodeId').value = nodeId;
+            document.getElementById('presetsContent').innerHTML = 'Loading...';
+            document.getElementById('presetsModal').classList.add('active');
+            
+            try {
+                const resp = await fetch(`/api/nodes/${nodeId}/presets`);
+                const data = await resp.json();
+                
+                if (data.error) {
+                    document.getElementById('presetsContent').innerHTML = `<p style="color: #fca5a5;">Error: ${data.error}</p>`;
+                    return;
+                }
+                
+                const presets = data.presets || {};
+                let html = `
+                    <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">
+                        Node: <strong>${data.domain || 'Unknown'}</strong><br>
+                        Toggle presets on/off. Changes will regenerate sing-box config.
+                    </p>
+                    <div style="display: flex; flex-direction: column; gap: 1rem;">
+                `;
+                
+                // VLESS + Vision
+                const vless = presets.vless_vision || {};
+                html += `
+                    <div class="card" style="margin: 0; padding: 1rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0.5rem;">
+                            <input type="checkbox" id="preset_vless_vision" ${vless.enabled !== false ? 'checked' : ''} style="width: auto;">
+                            <strong>VLESS + XTLS-Vision + Reality</strong>
+                        </label>
+                        <div style="font-size: 0.75rem; color: #94a3b8;">
+                            UUID: <code style="background: #0f172a; padding: 0.125rem 0.25rem; border-radius: 0.25rem;">${vless.uuid || 'Not set'}</code><br>
+                            Public Key: <code style="background: #0f172a; padding: 0.125rem 0.25rem; border-radius: 0.25rem; word-break: break-all;">${vless.public_key || 'Not set'}</code><br>
+                            Short ID: <code style="background: #0f172a; padding: 0.125rem 0.25rem; border-radius: 0.25rem;">${vless.short_id || 'Not set'}</code>
+                        </div>
+                    </div>
+                `;
+                
+                // VMess + WS
+                const vmess = presets.vmess_ws || {};
+                html += `
+                    <div class="card" style="margin: 0; padding: 1rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0.5rem;">
+                            <input type="checkbox" id="preset_vmess_ws" ${vmess.enabled !== false ? 'checked' : ''} style="width: auto;">
+                            <strong>VMess + WebSocket</strong>
+                        </label>
+                        <div style="font-size: 0.75rem; color: #94a3b8;">
+                            UUID: <code style="background: #0f172a; padding: 0.125rem 0.25rem; border-radius: 0.25rem;">${vmess.uuid || 'Not set'}</code><br>
+                            Path: <code style="background: #0f172a; padding: 0.125rem 0.25rem; border-radius: 0.25rem;">${vmess.path || '/vmess-ws'}</code>
+                        </div>
+                    </div>
+                `;
+                
+                // Hysteria2
+                const hy2 = presets.hysteria2 || {};
+                html += `
+                    <div class="card" style="margin: 0; padding: 1rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0.5rem;">
+                            <input type="checkbox" id="preset_hysteria2" ${hy2.enabled !== false ? 'checked' : ''} style="width: auto;">
+                            <strong>Hysteria2</strong>
+                        </label>
+                        <div style="font-size: 0.75rem; color: #94a3b8;">
+                            Password: <code style="background: #0f172a; padding: 0.125rem 0.25rem; border-radius: 0.25rem;">${hy2.password || 'Not set'}</code>
+                        </div>
+                    </div>
+                `;
+                
+                html += '</div>';
+                document.getElementById('presetsContent').innerHTML = html;
+            } catch (err) {
+                document.getElementById('presetsContent').innerHTML = `<p style="color: #fca5a5;">Failed to load presets</p>`;
+            }
+        }
+        
+        async function savePresets() {
+            const nodeId = document.getElementById('presetsNodeId').value;
+            const data = {
+                vless_vision: { enabled: document.getElementById('preset_vless_vision')?.checked ?? true },
+                vmess_ws: { enabled: document.getElementById('preset_vmess_ws')?.checked ?? true },
+                hysteria2: { enabled: document.getElementById('preset_hysteria2')?.checked ?? true }
+            };
+            
+            try {
+                const resp = await fetch(`/api/nodes/${nodeId}/presets`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const result = await resp.json();
+                
+                if (result.success) {
+                    showToast('Presets saved. Restarting sing-box...');
+                    // Restart singbox to apply changes
+                    await fetch(`/api/nodes/${nodeId}/restart/singbox`, {method: 'POST'});
+                    showToast('Presets applied successfully');
+                    hideModal('presetsModal');
+                } else {
+                    showToast(`Failed: ${result.error}`, 'error');
+                }
+            } catch (err) {
+                showToast('Failed to save presets', 'error');
             }
         }
 
@@ -564,23 +713,45 @@
             const nodeId = document.getElementById('configNodeId').value;
             const service = document.getElementById('configService').value;
             const content = document.getElementById('configContent').value;
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
             
             try {
                 // Save config
-                await fetch(`/api/nodes/${nodeId}/config/${service}`, {
+                const saveResp = await fetch(`/api/nodes/${nodeId}/config/${service}`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({content})
                 });
+                const saveResult = await saveResp.json();
                 
-                // Restart service
-                await fetch(`/api/nodes/${nodeId}/restart/${service}`, {method: 'POST'});
+                if (!saveResult.success && saveResult.error) {
+                    showToast(`Save failed: ${saveResult.error}`, 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Save & Restart';
+                    return;
+                }
                 
-                showToast('Config saved and service restarted');
+                // Restart service automatically
+                btn.textContent = 'Restarting...';
+                const restartResp = await fetch(`/api/nodes/${nodeId}/restart/${service}`, {method: 'POST'});
+                const restartResult = await restartResp.json();
+                
+                if (restartResult.success) {
+                    showToast('Config saved and service restarted');
+                } else {
+                    showToast('Config saved but restart failed', 'error');
+                }
                 hideModal('configModal');
+                
+                // Refresh node status after a short delay
+                setTimeout(() => checkStatus(nodeId), 2000);
             } catch (err) {
                 showToast('Failed to save config', 'error');
             }
+            btn.disabled = false;
+            btn.textContent = 'Save & Restart';
         };
 
         async function restartService() {
@@ -643,20 +814,7 @@
             }
         }
 
-        async function rebuildNode(id) {
-            if (!confirm('Rebuild all containers on this node? This will restart all services.')) return;
-            showToast('Rebuilding node containers...');
-            try {
-                const resp = await fetch(`/api/nodes/${id}/rebuild`, {method: 'POST'});
-                const data = await resp.json();
-                showToast(data.success ? 'Node rebuilt successfully' : `Rebuild failed: ${data.error || data.output}`, data.success ? 'success' : 'error');
-                if (data.success) {
-                    setTimeout(() => checkStatus(id), 5000);
-                }
-            } catch (err) {
-                showToast('Rebuild failed', 'error');
-            }
-        }
+
 
         function showSettingsModal() {
             document.getElementById('settingsModal').classList.add('active');
