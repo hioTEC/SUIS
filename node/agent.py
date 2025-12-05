@@ -371,7 +371,7 @@ def get_proxies():
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.9.22'})
+    return jsonify({'version': '2.0.0'})
 
 
 @app.route(f'/{PATH_PREFIX}/api/v1/diagnostics')

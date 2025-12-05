@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.20"
+readonly VERSION="2.0.0"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
