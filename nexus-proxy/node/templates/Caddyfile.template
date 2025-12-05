@@ -1,0 +1,50 @@
+{
+    email {$ACME_EMAIL:admin@example.com}
+    acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+}
+
+{$NODE_DOMAIN} {
+    # Agent API (hidden path)
+    handle /api/{$API_PATH}/* {
+        reverse_proxy agent:5001
+    }
+
+    # AdGuard Home Web UI
+    handle /adguard/* {
+        uri strip_prefix /adguard
+        reverse_proxy adguard:3000
+    }
+
+    # AdGuard DNS-over-HTTPS
+    handle /dns-query {
+        reverse_proxy adguard:443 {
+            transport http {
+                tls_insecure_skip_verify
+            }
+        }
+    }
+
+    # Sing-box API (if enabled)
+    handle /singbox/* {
+        uri strip_prefix /singbox
+        reverse_proxy singbox:9090
+    }
+
+    # Default response
+    handle {
+        respond "NexusProxy Node" 200
+    }
+
+    # Security headers
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+}
