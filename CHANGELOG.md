@@ -2,6 +2,16 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.1] - 2025-12-06
+
+### Fixed
+- Fixed script exiting immediately due to `set -e` with conditional expressions
+- Added `|| true` to all `[[ ]] && action` patterns to prevent false exit codes
+- Improved `detect_script_dir()` robustness for `curl | bash` mode
+- Fixed `check_os()` and `check_root()` functions to not trigger `set -e`
+
+---
+
 ## [1.9.0] - 2025-12-06
 
 ### Changed
@@ -9,6 +19,7 @@ All notable changes to SUI Solo will be documented in this file.
 - Simplified dashboard to English-only
 - Removed i18n system and language selection (was causing script exit issues)
 - Cleaner, more maintainable codebase
+- All GitHub links now point to `Eng` branch
 
 ### Removed
 - Removed Chinese language support from install script

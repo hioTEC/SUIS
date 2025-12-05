@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.0"
+readonly VERSION="1.9.1"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -85,12 +85,20 @@ confirm() {
 }
 
 detect_script_dir() {
-    local dir="$(cd "$(dirname "${BASH_SOURCE[0]}" 2>/dev/null)" 2>/dev/null && pwd)"
+    local dir=""
+    # Try to get script directory from BASH_SOURCE
+    if [[ -n "${BASH_SOURCE[0]:-}" ]] && [[ "${BASH_SOURCE[0]}" != "bash" ]]; then
+        dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || dir=""
+    fi
+    # Fallback to current directory
     [[ -z "$dir" || "$dir" == "/" ]] && dir="$(pwd)"
+    # Check if source files exist
     if [[ -d "$dir/master" && -d "$dir/node" ]]; then echo "$dir"; return 0; fi
-    if [[ -d "$dir/../master" && -d "$dir/../node" ]]; then echo "$(cd "$dir/.." && pwd)"; return 0; fi
+    if [[ -d "$dir/../master" && -d "$dir/../node" ]]; then echo "$(cd "$dir/.." 2>/dev/null && pwd)"; return 0; fi
     if [[ -d "./master" && -d "./node" ]]; then echo "$(pwd)"; return 0; fi
+    # Return empty if not found (will trigger download)
     echo ""
+    return 0
 }
 
 download_source_files() {
@@ -136,15 +144,18 @@ SCRIPT_DIR="$(detect_script_dir)"
 #=============================================================================
 check_os() {
     OS_TYPE="unknown"
-    [[ "$OSTYPE" == "darwin"* ]] && OS_TYPE="macos"
-    [[ -f /etc/os-release ]] && OS_TYPE="linux"
+    [[ "$OSTYPE" == "darwin"* ]] && OS_TYPE="macos" || true
+    [[ -f /etc/os-release ]] && OS_TYPE="linux" || true
 }
 
 check_root() {
     if [[ "$OS_TYPE" == "macos" ]]; then
-        [[ "$(id -u)" -ne 0 ]] && log_warn "Running as non-root on macOS. Ensure Docker permissions."
+        [[ "$(id -u)" -ne 0 ]] && log_warn "Running as non-root on macOS. Ensure Docker permissions." || true
     else
-        [[ "$(id -u)" -ne 0 ]] && { log_error "This script must be run as root on Linux!"; exit 1; }
+        if [[ "$(id -u)" -ne 0 ]]; then
+            log_error "This script must be run as root on Linux!"
+            exit 1
+        fi
     fi
 }
 
@@ -161,8 +172,8 @@ check_dependencies() {
         command -v "$tool" &>/dev/null || missing+=("$tool")
     done
     
-    [[ "$OS_TYPE" == "macos" ]] && ! command -v lsof &>/dev/null && missing+=("lsof")
-    [[ "$OS_TYPE" == "linux" ]] && ! command -v ss &>/dev/null && missing+=("iproute2")
+    [[ "$OS_TYPE" == "macos" ]] && ! command -v lsof &>/dev/null && missing+=("lsof") || true
+    [[ "$OS_TYPE" == "linux" ]] && ! command -v ss &>/dev/null && missing+=("iproute2") || true
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         log_info "Installing: ${missing[*]}"
@@ -204,10 +215,10 @@ kill_port_process() {
     log_info "Killing process on port $port..."
     if [[ "$OS_TYPE" == "macos" ]]; then
         local pid=$(lsof -ti :$port 2>/dev/null)
-        [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null
+        [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null || true
     else
         local pid=$(ss -tlnp 2>/dev/null | grep ":${port} " | grep -oP 'pid=\K\d+' | head -1)
-        [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null
+        [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null || true
         fuser -k ${port}/tcp 2>/dev/null || true
     fi
     sleep 1
@@ -381,10 +392,10 @@ load_env_defaults() {
         local d=$(grep '^MASTER_DOMAIN=' "$env_file" | cut -d= -f2)
         local nd=$(grep '^NODE_DOMAIN=' "$env_file" | cut -d= -f2)
         local e=$(grep '^ACME_EMAIL=' "$env_file" | cut -d= -f2)
-        [[ -n "$s" ]] && secret="$s"
-        [[ -n "$d" ]] && domain="$d"
-        [[ -n "$nd" ]] && domain="$nd"
-        [[ -n "$e" ]] && email="$e"
+        [[ -n "$s" ]] && secret="$s" || true
+        [[ -n "$d" ]] && domain="$d" || true
+        [[ -n "$nd" ]] && domain="$nd" || true
+        [[ -n "$e" ]] && email="$e" || true
     }
 }
 
@@ -407,7 +418,7 @@ collect_inputs() {
     fi
     
     local target_dir="$MASTER_INSTALL_DIR"
-    [[ "$INSTALL_MODE" == "node" ]] && target_dir="$NODE_INSTALL_DIR"
+    [[ "$INSTALL_MODE" == "node" ]] && target_dir="$NODE_INSTALL_DIR" || true
     load_env_defaults "$target_dir/.env"
 
     echo ""
