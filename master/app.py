@@ -19,6 +19,10 @@ CLUSTER_SECRET = os.environ.get('CLUSTER_SECRET', '')
 NODES_FILE = os.path.join(DATA_DIR, 'nodes.json')
 SALT = "SUI_Solo_Secured_2024"
 
+# Regex patterns
+DOMAIN_PATTERN = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-\.]{0,253}[a-zA-Z0-9])?$')
+NODE_ID_PATTERN = re.compile(r'^[a-f0-9]{8}$')
+
 
 class RateLimiter:
     def __init__(self, max_requests: int = 10, window_seconds: int = 60):
@@ -56,7 +60,7 @@ def rate_limit(limiter):
 
 
 def sanitize_domain(domain):
-    if not domain or not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-\.]{0,253}[a-zA-Z0-9])?$', domain):
+    if not domain or not DOMAIN_PATTERN.match(domain):
         raise ValueError(f'Invalid domain: {domain}')
     return domain.lower()
 
@@ -76,12 +80,19 @@ def get_hidden_path(token):
 
 
 def load_nodes():
-    return json.load(open(NODES_FILE)) if os.path.exists(NODES_FILE) else {}
+    try:
+        if os.path.exists(NODES_FILE):
+            with open(NODES_FILE, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
 
 
 def save_nodes(nodes):
     os.makedirs(DATA_DIR, exist_ok=True)
-    json.dump(nodes, open(NODES_FILE, 'w'), indent=2)
+    with open(NODES_FILE, 'w') as f:
+        json.dump(nodes, f, indent=2)
 
 
 def get_node_api_url(node):
@@ -93,7 +104,10 @@ def call_node_api(node, endpoint, method='GET', data=None):
     url = f"{get_node_api_url(node)}/{endpoint}"
     headers = {'X-SUI-Token': CLUSTER_SECRET}
     try:
-        resp = requests.get(url, headers=headers, timeout=10) if method == 'GET' else requests.post(url, headers=headers, json=data, timeout=30)
+        if method == 'GET':
+            resp = requests.get(url, headers=headers, timeout=10)
+        else:
+            resp = requests.post(url, headers=headers, json=data, timeout=30)
         return resp.json() if resp.ok else {'error': resp.text}
     except Exception as e:
         return {'error': str(e)}
@@ -116,14 +130,22 @@ def list_nodes():
 def add_node():
     data = request.json or {}
     try:
-        name, domain = sanitize_name(data.get('name')), sanitize_domain(data.get('domain'))
+        name = sanitize_name(data.get('name'))
+        domain = sanitize_domain(data.get('domain'))
         if not name or not domain:
             return jsonify({'error': 'Missing name or domain'}), 400
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+    
     nodes = load_nodes()
     node_id = hashlib.md5(domain.encode()).hexdigest()[:8]
-    nodes[node_id] = {'name': name, 'domain': domain, 'https': data.get('https', True), 'added_at': datetime.now().isoformat(), 'status': 'unknown'}
+    nodes[node_id] = {
+        'name': name,
+        'domain': domain,
+        'https': data.get('https', True),
+        'added_at': datetime.now().isoformat(),
+        'status': 'unknown'
+    }
     save_nodes(nodes)
     return jsonify({'id': node_id, 'node': nodes[node_id]})
 
@@ -131,7 +153,7 @@ def add_node():
 @app.route('/api/nodes/<node_id>', methods=['DELETE'])
 @rate_limit(api_limiter)
 def delete_node(node_id):
-    if not re.match(r'^[a-f0-9]{8}$', node_id):
+    if not NODE_ID_PATTERN.match(node_id):
         return jsonify({'error': 'Invalid node ID'}), 400
     nodes = load_nodes()
     if node_id in nodes:
@@ -144,7 +166,7 @@ def delete_node(node_id):
 @app.route('/api/nodes/<node_id>/status')
 @rate_limit(api_limiter)
 def node_status(node_id):
-    if not re.match(r'^[a-f0-9]{8}$', node_id):
+    if not NODE_ID_PATTERN.match(node_id):
         return jsonify({'error': 'Invalid node ID'}), 400
     nodes = load_nodes()
     if node_id not in nodes:
@@ -159,29 +181,18 @@ def node_status(node_id):
 @app.route('/api/nodes/<node_id>/services')
 @rate_limit(api_limiter)
 def node_services(node_id):
-    if not re.match(r'^[a-f0-9]{8}$', node_id):
+    if not NODE_ID_PATTERN.match(node_id):
         return jsonify({'error': 'Invalid node ID'}), 400
     nodes = load_nodes()
-    return jsonify({'error': 'Node not found'}) if node_id not in nodes else jsonify(call_node_api(nodes[node_id], 'services'))
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    return jsonify(call_node_api(nodes[node_id], 'services'))
 
 
 @app.route('/api/nodes/<node_id>/restart/<service>', methods=['POST'])
 @rate_limit(auth_limiter)
 def restart_service(node_id, service):
-    if not re.match(r'^[a-f0-9]{8}$', node_id):
-        return jsonify({'error': 'Invalid node ID'}), 400
-    try:
-        service = sanitize_service(service)
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
-    nodes = load_nodes()
-    return jsonify({'error': 'Node not found'}) if node_id not in nodes else jsonify(call_node_api(nodes[node_id], f'restart/{service}', 'POST'))
-
-
-@app.route('/api/nodes/<node_id>/config/<service>', methods=['GET', 'POST'])
-@rate_limit(auth_limiter if request.method == 'POST' else api_limiter)
-def config(node_id, service):
-    if not re.match(r'^[a-f0-9]{8}$', node_id):
+    if not NODE_ID_PATTERN.match(node_id):
         return jsonify({'error': 'Invalid node ID'}), 400
     try:
         service = sanitize_service(service)
@@ -190,7 +201,25 @@ def config(node_id, service):
     nodes = load_nodes()
     if node_id not in nodes:
         return jsonify({'error': 'Node not found'}), 404
-    return jsonify(call_node_api(nodes[node_id], f'config/{service}', request.method, request.json if request.method == 'POST' else None))
+    return jsonify(call_node_api(nodes[node_id], f'restart/{service}', 'POST'))
+
+
+@app.route('/api/nodes/<node_id>/config/<service>', methods=['GET', 'POST'])
+@rate_limit(api_limiter)
+def config(node_id, service):
+    if not NODE_ID_PATTERN.match(node_id):
+        return jsonify({'error': 'Invalid node ID'}), 400
+    try:
+        service = sanitize_service(service)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    nodes = load_nodes()
+    if node_id not in nodes:
+        return jsonify({'error': 'Node not found'}), 404
+    
+    if request.method == 'POST':
+        return jsonify(call_node_api(nodes[node_id], f'config/{service}', 'POST', request.json))
+    return jsonify(call_node_api(nodes[node_id], f'config/{service}'))
 
 
 @app.route('/api/secret')
