@@ -1,6 +1,5 @@
 {
     email {$ACME_EMAIL:admin@example.com}
-    acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
 }
 
 {$NODE_DOMAIN} {
@@ -24,28 +23,28 @@
         }
     }
 
-    # Sing-box API (if enabled)
+    # Sing-box API
     handle /singbox/* {
         uri strip_prefix /singbox
         reverse_proxy singbox:9090
     }
 
-    # Health check (public)
+    # Health check
     handle /health {
         reverse_proxy agent:5001
     }
 
-    # Fallback: Camouflage page (defense in depth)
+    # Fallback: Camouflage
     handle {
-        respond "Welcome to our server" 200
+        respond "Welcome" 200
     }
 
     # Security headers
     header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
         -Server
-        X-Content-Type-Options nosniff
-        X-Frame-Options DENY
-        Referrer-Policy strict-origin-when-cross-origin
     }
 
     log {

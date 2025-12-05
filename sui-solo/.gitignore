@@ -1,0 +1,42 @@
+# Environment & Secrets
+.env
+.env.*
+*.secret
+
+# SSL/TLS
+*.pem
+*.key
+*.crt
+certs/
+
+# Config files (may contain secrets)
+config.json
+AdGuardHome.yaml
+Caddyfile
+!templates/Caddyfile.template
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Docker
+docker-compose.override.yml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data
+data/
+*.db

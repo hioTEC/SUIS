@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NexusProxy - Control Panel</title>
+    <title>SUI Solo - Control Panel</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
@@ -16,7 +16,6 @@
         .btn-primary { background: #3b82f6; color: white; }
         .btn-primary:hover { background: #2563eb; }
         .btn-danger { background: #ef4444; color: white; }
-        .btn-danger:hover { background: #dc2626; }
         .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
         .card { background: #1e293b; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem; }
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
@@ -25,40 +24,33 @@
         .node-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
         .node-name { font-weight: 600; font-size: 1.125rem; }
         .node-domain { color: #94a3b8; font-size: 0.875rem; margin-top: 0.25rem; }
-        .status { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; }
+        .status { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; }
         .status-online { background: #166534; color: #86efac; }
         .status-offline { background: #991b1b; color: #fca5a5; }
         .status-unknown { background: #374151; color: #9ca3af; }
-        .status::before { content: ''; width: 0.5rem; height: 0.5rem; border-radius: 50%; }
-        .status-online::before { background: #22c55e; }
-        .status-offline::before { background: #ef4444; }
-        .status-unknown::before { background: #6b7280; }
         .services { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
         .service-badge { background: #334155; padding: 0.25rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; }
         .actions { display: flex; gap: 0.5rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #334155; }
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); align-items: center; justify-content: center; z-index: 50; }
         .modal.active { display: flex; }
         .modal-content { background: #1e293b; padding: 2rem; border-radius: 0.75rem; width: 100%; max-width: 400px; }
-        .modal-header { margin-bottom: 1.5rem; }
-        .modal-title { font-size: 1.25rem; font-weight: 600; }
         .form-group { margin-bottom: 1rem; }
         .form-group label { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; color: #94a3b8; }
-        .form-group input { width: 100%; padding: 0.75rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem; color: #e2e8f0; font-size: 0.875rem; }
-        .form-group input:focus { outline: none; border-color: #3b82f6; }
+        .form-group input { width: 100%; padding: 0.75rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem; color: #e2e8f0; }
         .form-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.5rem; }
         .empty-state { text-align: center; padding: 3rem; color: #64748b; }
+        .https-badge { background: #166534; color: #86efac; padding: 0.125rem 0.5rem; border-radius: 0.25rem; font-size: 0.625rem; margin-left: 0.5rem; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🌐 NexusProxy Control Panel</h1>
+            <h1>🚀 SUI Solo Control Panel <span class="https-badge">HTTPS</span></h1>
             <div class="secret-box">
-                <span>Cluster Secret:</span> <code id="secret">{{ secret[:8] }}...</code>
+                <span>Secret:</span> <code id="secret">{{ secret[:8] }}...</code>
                 <button class="btn btn-sm" onclick="copySecret()">Copy</button>
             </div>
         </header>
-
         <div class="card">
             <div class="card-header">
                 <h2>Nodes</h2>
@@ -66,10 +58,7 @@
             </div>
             <div class="node-grid" id="nodeGrid">
                 {% if not nodes %}
-                <div class="empty-state">
-                    <p>No nodes registered yet.</p>
-                    <p>Click "Add Node" to get started.</p>
-                </div>
+                <div class="empty-state"><p>No nodes yet. Click "Add Node" to start.</p></div>
                 {% endif %}
                 {% for id, node in nodes.items() %}
                 <div class="node-card" data-id="{{ id }}">
@@ -82,11 +71,11 @@
                     </div>
                     <div class="services">
                         <span class="service-badge">Sing-box</span>
-                        <span class="service-badge">AdGuard Home</span>
+                        <span class="service-badge">AdGuard</span>
                         <span class="service-badge">Caddy</span>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-primary btn-sm" onclick="checkStatus('{{ id }}')">Check Status</button>
+                        <button class="btn btn-primary btn-sm" onclick="checkStatus('{{ id }}')">Check</button>
                         <button class="btn btn-sm" onclick="viewServices('{{ id }}')">Services</button>
                         <button class="btn btn-danger btn-sm" onclick="deleteNode('{{ id }}')">Delete</button>
                     </div>
@@ -95,72 +84,49 @@
             </div>
         </div>
     </div>
-
     <div class="modal" id="addModal">
         <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Add New Node</h3>
-            </div>
+            <h3 style="margin-bottom:1.5rem">Add New Node</h3>
             <form id="addForm">
-                <div class="form-group">
-                    <label>Node Name</label>
-                    <input type="text" name="name" placeholder="e.g., Tokyo-01" required>
-                </div>
-                <div class="form-group">
-                    <label>Domain</label>
-                    <input type="text" name="domain" placeholder="e.g., node1.example.com" required>
-                </div>
+                <div class="form-group"><label>Node Name</label><input type="text" name="name" placeholder="Tokyo-01" required></div>
+                <div class="form-group"><label>Domain</label><input type="text" name="domain" placeholder="node1.example.com" required></div>
                 <div class="form-actions">
                     <button type="button" class="btn" onclick="hideAddModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Node</button>
+                    <button type="submit" class="btn btn-primary">Add</button>
                 </div>
             </form>
         </div>
     </div>
-
     <script>
         const SECRET = '{{ secret }}';
-        
-        function copySecret() {
-            navigator.clipboard.writeText(SECRET);
-            alert('Secret copied to clipboard!');
-        }
-        
+        function copySecret() { navigator.clipboard.writeText(SECRET); alert('Copied!'); }
         function showAddModal() { document.getElementById('addModal').classList.add('active'); }
         function hideAddModal() { document.getElementById('addModal').classList.remove('active'); }
-        
         document.getElementById('addForm').onsubmit = async (e) => {
             e.preventDefault();
             const form = new FormData(e.target);
             const resp = await fetch('/api/nodes', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({name: form.get('name'), domain: form.get('domain')})
             });
-            if (resp.ok) location.reload();
-            else alert('Failed to add node');
+            resp.ok ? location.reload() : alert('Failed');
         };
-        
         async function checkStatus(id) {
             const resp = await fetch(`/api/nodes/${id}/status`);
             const data = await resp.json();
             alert(data.error ? `Error: ${data.error}` : `Status: Online\nUptime: ${data.uptime || 'N/A'}`);
             location.reload();
         }
-        
         async function viewServices(id) {
             const resp = await fetch(`/api/nodes/${id}/services`);
             const data = await resp.json();
             if (data.error) { alert(`Error: ${data.error}`); return; }
             let msg = 'Services:\n';
-            for (const [name, status] of Object.entries(data.services || {})) {
-                msg += `- ${name}: ${status}\n`;
-            }
+            for (const [name, status] of Object.entries(data.services || {})) msg += `- ${name}: ${status}\n`;
             alert(msg);
         }
-        
         async function deleteNode(id) {
-            if (!confirm('Delete this node?')) return;
+            if (!confirm('Delete?')) return;
             await fetch(`/api/nodes/${id}`, {method: 'DELETE'});
             location.reload();
         }

@@ -3,23 +3,19 @@ version: '3.8'
 services:
   caddy:
     image: caddy:2-alpine
-    container_name: nexus-caddy
+    container_name: sui-caddy
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
-    environment:
-      - NODE_DOMAIN=${NODE_DOMAIN}
-      - PATH_PREFIX=${PATH_PREFIX}
-      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
     volumes:
       - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
       - caddy-logs:/var/log/caddy
     networks:
-      - nexus-net
+      - sui-net
     depends_on:
       - agent
       - singbox
@@ -27,7 +23,7 @@ services:
 
   agent:
     build: .
-    container_name: nexus-agent
+    container_name: sui-agent
     restart: unless-stopped
     environment:
       - CLUSTER_SECRET=${CLUSTER_SECRET}
@@ -37,30 +33,28 @@ services:
       - ./config:/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - nexus-net
+      - sui-net
 
   singbox:
     image: ghcr.io/sagernet/sing-box:latest
-    container_name: nexus-singbox
+    container_name: sui-singbox
     restart: unless-stopped
     volumes:
       - ./config/singbox:/etc/sing-box:ro
     networks:
-      - nexus-net
+      - sui-net
     cap_add:
       - NET_ADMIN
-    sysctls:
-      - net.ipv4.ip_forward=1
 
   adguard:
     image: adguard/adguardhome:latest
-    container_name: nexus-adguard
+    container_name: sui-adguard
     restart: unless-stopped
     volumes:
       - adguard-work:/opt/adguardhome/work
       - adguard-conf:/opt/adguardhome/conf
     networks:
-      - nexus-net
+      - sui-net
     ports:
       - "53:53/tcp"
       - "53:53/udp"
@@ -73,5 +67,5 @@ volumes:
   adguard-conf:
 
 networks:
-  nexus-net:
+  sui-net:
     driver: bridge
