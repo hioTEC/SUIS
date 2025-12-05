@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.3"
+readonly VERSION="1.9.4"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -269,7 +269,6 @@ setup_shared_gateway() {
     log_step "Setting up Shared Gateway (Caddy)..."
     mkdir -p "$GATEWAY_DIR"
     cat > "$GATEWAY_DIR/docker-compose.yml" << 'EOF'
-version: '3.8'
 services:
   gateway:
     image: caddy:2-alpine
@@ -492,7 +491,6 @@ install_master() {
     cp -r "${SCRIPT_DIR}/master/"* "$MASTER_INSTALL_DIR/"
     
     cat > "$MASTER_INSTALL_DIR/docker-compose.yml" << 'EOF'
-version: '3.8'
 services:
   app:
     build: .
@@ -572,7 +570,6 @@ install_node() {
     cp -r "${SCRIPT_DIR}/node/"* "$NODE_INSTALL_DIR/"
     
     cat > "$NODE_INSTALL_DIR/docker-compose.yml" << 'EOF'
-version: '3.8'
 services:
   agent:
     build: .
@@ -764,6 +761,12 @@ install_both() {
     
     echo ""
     log_success "Both Master and Node installed successfully!"
+    echo ""
+    echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${MAGENTA}║${NC}  ${BOLD}CLUSTER SECRET (Save this!)${NC}                                  ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╠════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${MAGENTA}║${NC}  ${YELLOW}${secret}${NC}  ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "  ${ARROW} Master Panel: ${CYAN}https://${master_domain}${NC}"
     echo -e "  ${ARROW} Node URL:     ${CYAN}https://${node_domain}${NC}"

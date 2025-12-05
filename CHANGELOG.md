@@ -2,6 +2,14 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.4] - 2025-12-06
+
+### Fixed
+- Added secret display at end of `--both` installation
+- Removed deprecated `version: '3.8'` from all docker-compose.yml files
+
+---
+
 ## [1.9.3] - 2025-12-06
 
 ### Fixed
