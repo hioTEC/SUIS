@@ -2,6 +2,15 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.6] - 2025-12-06
+
+### Fixed
+- Fixed Caddyfile syntax error causing gateway to fail
+- Changed `header { }` blocks to multi-line format
+- Changed `handle { }` blocks to multi-line format
+
+---
+
 ## [1.9.5] - 2025-12-06
 
 ### Added

@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.5"
+readonly VERSION="1.9.6"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -324,12 +324,12 @@ EOF
 
 ${m_domain} {
     reverse_proxy sui-master:5000
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Frame-Options "DENY"
-        X-Content-Type-Options "nosniff"
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    header X-Frame-Options "DENY"
+    header X-Content-Type-Options "nosniff"
+    log {
+        output file /var/log/caddy/master.log
     }
-    log { output file /var/log/caddy/master.log }
 }
 EOF
         echo -e "  ${CHECK} Added Master: ${m_domain}"
@@ -339,12 +339,24 @@ EOF
         cat >> "$caddyfile" << EOF
 
 ${n_domain} {
-    handle /${n_path_prefix}/api/v1/* { reverse_proxy sui-agent:5001 }
-    handle /adguard/* { uri strip_prefix /adguard; reverse_proxy sui-adguard:3000 }
-    handle /health { reverse_proxy sui-agent:5001 }
-    handle { respond "Welcome" 200 }
-    header { Strict-Transport-Security "max-age=31536000"; -Server }
-    log { output file /var/log/caddy/node.log }
+    handle /${n_path_prefix}/api/v1/* {
+        reverse_proxy sui-agent:5001
+    }
+    handle /adguard/* {
+        uri strip_prefix /adguard
+        reverse_proxy sui-adguard:3000
+    }
+    handle /health {
+        reverse_proxy sui-agent:5001
+    }
+    handle {
+        respond "Welcome" 200
+    }
+    header Strict-Transport-Security "max-age=31536000"
+    header -Server
+    log {
+        output file /var/log/caddy/node.log
+    }
 }
 EOF
         echo -e "  ${CHECK} Added Node: ${n_domain}"
