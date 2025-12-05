@@ -42,8 +42,8 @@ dig +short node1.example.com
 ### Install Master
 
 ```bash
-git clone https://github.com/yourusername/sui-solo.git
-cd sui-solo
+git clone https://github.com/pjonix/SUIS.git
+cd SUIS
 sudo ./install.sh --master
 ```
 
@@ -73,8 +73,8 @@ Open `https://YOUR_MASTER_DOMAIN` → Click **"+ Add Node"**
 ### 安装主控
 
 ```bash
-git clone https://github.com/yourusername/sui-solo.git
-cd sui-solo
+git clone https://github.com/pjonix/SUIS.git
+cd SUIS
 sudo ./install.sh --master
 ```
 
@@ -105,7 +105,7 @@ sudo ./install.sh --node
 ## 📁 Project Structure
 
 ```
-sui-solo/
+SUIS/
 ├── install.sh              # Interactive installer
 ├── README.md
 ├── LICENSE

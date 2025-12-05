@@ -44,8 +44,8 @@ dig +short node1.example.com
 ### 安装主控 (Master)
 
 ```bash
-git clone https://github.com/yourusername/sui-solo.git
-cd sui-solo
+git clone https://github.com/pjonix/SUIS.git
+cd SUIS
 sudo ./install.sh --master
 ```
 

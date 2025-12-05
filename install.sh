@@ -8,7 +8,7 @@
 # ╚══════╝ ╚═════╝ ╚═╝    ╚══════╝ ╚═════╝ ╚══════╝ ╚═════╝
 #
 # SUI Solo - Distributed Proxy Cluster Management
-# https://github.com/yourusername/sui-solo
+# https://github.com/pjonix/SUIS
 #
 # Usage: sudo ./install.sh
 #
