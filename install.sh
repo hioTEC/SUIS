@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.8.1"
+readonly VERSION="1.8.3"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -298,16 +298,22 @@ EOF
 }
 
 select_language() {
+    # Skip if /dev/tty not available
+    [[ ! -e /dev/tty ]] && return 0
+    
     echo ""
     echo "  $(msg select_lang)"
     echo "    1) $(msg lang_en)"
     echo "    2) $(msg lang_zh)"
     echo ""
-    read -r -p "  [1-2]: " lang_choice < /dev/tty
+    
+    local lang_choice=""
+    read -r -p "  [1-2]: " lang_choice < /dev/tty 2>/dev/null || lang_choice="1"
     case $lang_choice in
         2) LANG_CODE="zh" ;;
         *) LANG_CODE="en" ;;
     esac
+    return 0
 }
 
 confirm() {

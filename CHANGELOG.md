@@ -2,6 +2,23 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.8.3] - 2025-12-06
+
+### Fixed
+- Simplified select_language function to prevent script exit
+- Added explicit `return 0` to ensure function completes successfully
+- Improved read command fallback when tty read fails
+
+---
+
+## [1.8.2] - 2025-12-06
+
+### Fixed
+- Fixed language selection causing script to exit when tty not available
+- Added error handling for read command in select_language function
+
+---
+
 ## [1.8.1] - 2025-12-06
 
 ### Fixed
