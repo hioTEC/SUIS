@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="1.9.1"
+readonly VERSION="1.9.2"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -354,7 +354,12 @@ EOF
 
 start_shared_gateway() {
     log_info "Starting shared gateway..."
-    cd "$GATEWAY_DIR" && docker compose up -d
+    cd "$GATEWAY_DIR"
+    if ! docker compose up -d; then
+        log_error "Failed to start gateway. Check docker compose logs:"
+        docker compose logs --tail=20
+        exit 1
+    fi
 }
 
 reload_shared_gateway() {
@@ -509,7 +514,12 @@ MASTER_DOMAIN=${domain}
 ACME_EMAIL=${email}
 EOF
 
-    cd "$MASTER_INSTALL_DIR" && docker compose up -d --build
+    cd "$MASTER_INSTALL_DIR"
+    if ! docker compose up -d --build; then
+        log_error "Failed to start Master containers"
+        docker compose logs --tail=20
+        exit 1
+    fi
     
     setup_shared_gateway
     generate_shared_caddyfile
@@ -615,7 +625,12 @@ PATH_PREFIX=${path_prefix}
 ACME_EMAIL=${email}
 EOF
 
-    cd "$NODE_INSTALL_DIR" && docker compose up -d --build
+    cd "$NODE_INSTALL_DIR"
+    if ! docker compose up -d --build; then
+        log_error "Failed to start Node containers"
+        docker compose logs --tail=20
+        exit 1
+    fi
     
     if [[ "$SHARED_CADDY_MODE" == "true" ]]; then
         generate_shared_caddyfile

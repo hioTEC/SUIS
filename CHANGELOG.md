@@ -2,6 +2,15 @@
 
 All notable changes to SUI Solo will be documented in this file.
 
+## [1.9.2] - 2025-12-06
+
+### Fixed
+- Fixed `start_shared_gateway()` silently failing due to `set -e`
+- Added proper error handling for `docker compose up` commands
+- Now shows docker logs when container startup fails
+
+---
+
 ## [1.9.1] - 2025-12-06
 
 ### Fixed

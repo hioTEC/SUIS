@@ -212,7 +212,7 @@ def update():
 @require_auth
 @rate_limit(api_limiter)
 def version():
-    return jsonify({'version': '1.9.1'})
+    return jsonify({'version': '1.9.2'})
 
 
 @app.route('/health')
