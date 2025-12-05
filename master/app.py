@@ -10,7 +10,8 @@ import subprocess
 from datetime import datetime
 from collections import defaultdict
 from functools import wraps
-from flask import Flask, render_template, request, jsonify
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from flask import Flask, render_template, request, jsonify, Response
 import requests
 
 app = Flask(__name__)
@@ -46,6 +47,30 @@ class RateLimiter:
 
 api_limiter = RateLimiter(max_requests=30, window_seconds=60)
 auth_limiter = RateLimiter(max_requests=5, window_seconds=60)
+
+
+# Simple subscription cache (5 minutes TTL)
+class SubscriptionCache:
+    def __init__(self, ttl=300):
+        self.cache = {}
+        self.ttl = ttl
+    
+    def get(self, key):
+        if key in self.cache:
+            data, timestamp = self.cache[key]
+            if time.time() - timestamp < self.ttl:
+                return data
+            del self.cache[key]
+        return None
+    
+    def set(self, key, data):
+        self.cache[key] = (data, time.time())
+    
+    def clear(self):
+        self.cache.clear()
+
+
+subscription_cache = SubscriptionCache(ttl=300)  # 5 minutes
 
 
 def get_client_ip():
@@ -494,31 +519,62 @@ def node_subscribe(node_id):
     return jsonify(call_node_api(nodes[node_id], 'subscribe'))
 
 
-@app.route('/api/subscribe')
-@rate_limit(api_limiter)
-def subscribe():
-    """Generate aggregated subscription for all nodes with presets"""
-    import base64
-    nodes = load_nodes()
-    format_type = request.args.get('format', 'base64')  # base64, clash, singbox
-    
-    all_links = []
-    all_proxies = []
-    
-    for node_id, node in nodes.items():
-        # Try to get preset-based subscription first
-        result = call_node_api(node, 'subscribe')
+def fetch_node_subscription(node):
+    """Fetch subscription from a single node"""
+    try:
+        result = call_node_api(node, 'subscribe', timeout=5)
         if 'links' in result:
+            links = []
             for link_info in result['links']:
                 link_info['node_name'] = node['name']
                 link_info['node_domain'] = node['domain']
-                all_links.append(link_info)
+                links.append(link_info)
+            return links
+    except Exception as e:
+        app.logger.error(f"Failed to fetch subscription from {node['domain']}: {e}")
+    return []
+
+
+@app.route('/api/subscribe')
+@rate_limit(api_limiter)
+def subscribe():
+    """Generate aggregated subscription from all online nodes (with cache)"""
+    import base64
+    
+    format_type = request.args.get('format', 'base64')  # base64, clash, singbox
+    cache_key = f'subscription_{format_type}'
+    
+    # Try cache first
+    cached = subscription_cache.get(cache_key)
+    if cached:
+        if format_type == 'base64':
+            return Response(cached, mimetype='text/plain')
+        return jsonify(cached)
+    
+    # Fetch fresh data
+    nodes = load_nodes()
+    all_links = []
+    
+    # Fetch subscriptions from all online nodes concurrently
+    online_nodes = [node for node in nodes.values() if node.get('status') == 'online']
+    
+    if online_nodes:
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(fetch_node_subscription, node): node for node in online_nodes}
+            
+            for future in as_completed(futures, timeout=10):
+                try:
+                    node_links = future.result()
+                    all_links.extend(node_links)
+                except Exception as e:
+                    app.logger.error(f"Subscription fetch error: {e}")
     
     if format_type == 'base64':
         # Return base64 encoded links
         links_text = '\n'.join([l['link'] for l in all_links])
-        from flask import Response
-        return Response(base64.b64encode(links_text.encode()).decode(), mimetype='text/plain')
+        result = base64.b64encode(links_text.encode()).decode()
+        subscription_cache.set(cache_key, result)
+        return Response(result, mimetype='text/plain')
     
     elif format_type == 'clash':
         # Return Clash format
@@ -568,6 +624,8 @@ def subscribe():
                 'interval': 300
             }]
         }
+        # Cache and return
+        subscription_cache.set(cache_key, clash_config)
         return jsonify(clash_config)
     
     elif format_type == 'singbox':
@@ -581,18 +639,11 @@ def subscribe():
                 outbound['type'] = 'vless'
                 if link_info['link'].startswith('vless://'):
                     outbound['uuid'] = link_info['link'].split('://')[1].split('@')[0]
-                if 'vision' in link_info['type']:
-                    outbound['flow'] = 'xtls-rprx-vision'
-                    outbound['tls'] = {
-                        'enabled': True,
-                        'server_name': 'www.microsoft.com',
-                        'reality': {'enabled': True, 'public_key': '', 'short_id': ''}
-                    }
-                    # Parse reality params from link
-                    if 'pbk=' in link_info['link']:
-                        outbound['tls']['reality']['public_key'] = link_info['link'].split('pbk=')[1].split('&')[0]
-                    if 'sid=' in link_info['link']:
-                        outbound['tls']['reality']['short_id'] = link_info['link'].split('sid=')[1].split('&')[0]
+                outbound['flow'] = 'xtls-rprx-vision'
+                outbound['tls'] = {
+                    'enabled': True,
+                    'server_name': link_info['node_domain']
+                }
             elif 'vmess' in link_info['type']:
                 outbound['type'] = 'vmess'
                 try:
@@ -617,9 +668,12 @@ def subscribe():
             'outbounds': outbounds + [{'type': 'direct', 'tag': 'direct'}],
             'route': {'final': outbounds[0]['tag'] if outbounds else 'direct'}
         }
+        # Cache and return
+        subscription_cache.set(cache_key, singbox_config)
         return jsonify(singbox_config)
     
     # Default: return raw links
+    subscription_cache.set(cache_key, {'links': all_links})
     return jsonify({'links': all_links})
 
 
