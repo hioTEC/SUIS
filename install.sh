@@ -1766,7 +1766,7 @@ ADGUARD_ADMIN_PASS=${adguard_pass}
 EOF
 
     # Generate Caddyfile using template
-    local template_file="SUIS/node/templates/Caddyfile.template"
+    local template_file="${SCRIPT_DIR}/node/templates/Caddyfile.template"
     local output_file="$NODE_INSTALL_DIR/config/caddy/Caddyfile"
     
     # 使用环境变量替换模板内容
