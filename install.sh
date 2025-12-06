@@ -16,7 +16,7 @@ set -e
 #=============================================================================
 # CONSTANTS
 #=============================================================================
-readonly VERSION="2.0.0"
+readonly VERSION="2.0.1"
 readonly PROJECT_NAME="SUI Solo"
 readonly BASE_DIR="/opt/sui-solo"
 readonly MASTER_INSTALL_DIR="/opt/sui-solo/master"
@@ -1069,11 +1069,7 @@ SBEOF
     acme_ca https://acme-v02.api.letsencrypt.org/directory
 }
 
-:443 {
-    tls {
-        on_demand
-    }
-    
+${master_domain} {
     reverse_proxy sui-master:5000
     
     header {
@@ -1749,7 +1745,8 @@ SBEOF
     local panel_pass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
     # Will generate bcrypt hash after Caddy container is running
     local panel_hash=""
-    
+    # Generate random password for AdGuard admin interface
+    local adguard_pass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
     generate_adguard_config
     
     cat > "$NODE_INSTALL_DIR/.env" << EOF
@@ -1759,40 +1756,38 @@ MASTER_DOMAIN=${master_domain}
 ACME_EMAIL=${email}
 PATH_PREFIX=${path_prefix}
 VLESS_UUID=${vless_uuid}
-VLESS_PORT=443
+VLESS_PORT=${vless_port}
 HY2_PASSWORD=${hy2_password}
 HY2_PORT_START=50200
 HY2_PORT_END=50300
 PANEL_USER=${panel_user}
 PANEL_PASS=${panel_pass}
+ADGUARD_ADMIN_PASS=${adguard_pass}
 EOF
 
-    # Caddyfile: Standard HTTPS for both domains
-    # Master panel and Node web interface on standard ports
-    # VLESS proxy uses port 8443 (users connect to node.domain.com:8443)
-    cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
-${master_domain} {
-    reverse_proxy sui-master:5000
-}
-
-${node_domain} {
-    handle /${path_prefix}/api/v1/* {
-        reverse_proxy sui-agent:5001
-    }
-    handle /adguard/* {
-        uri strip_prefix /adguard
-        reverse_proxy sui-adguard:3000
-    }
-    handle /health {
-        reverse_proxy sui-agent:5001
-    }
-    handle {
-        root * /usr/share/caddy
-        file_server
-        try_files {path} /index.html
-    }
-}
-CADDYEOF
+    # Generate Caddyfile using template
+    local template_file="SUIS/node/templates/Caddyfile.template"
+    local output_file="$NODE_INSTALL_DIR/config/caddy/Caddyfile"
+    
+    # 使用环境变量替换模板内容
+    export MasterDomain="${master_domain}"
+    export NodeDomain="${node_domain}"
+    export PathPrefix="${path_prefix}"
+    export AdGuardAdminPass="${adguard_pass}"
+    
+    # 使用envsubst进行模板替换
+    if command -v envsubst &>/dev/null; then
+        envsubst < "$template_file" > "$output_file"
+    else
+        # 如果envsubst不可用，使用awk替换
+        awk -v md="${master_domain}" -v nd="${node_domain}" \
+            -v pp="${path_prefix}" -v ap="${adguard_pass}" \
+            '{gsub(/\{\{.MasterDomain\}\}/, md); 
+              gsub(/\{\{.NodeDomain\}\}/, nd); 
+              gsub(/\{\{.PathPrefix\}\}/, pp); 
+              gsub(/\{\{.AdGuardAdminPass\}\}/, ap); 
+              print}' "$template_file" > "$output_file"
+    fi
 
     # Create camouflage site
     cat > "$NODE_INSTALL_DIR/config/caddy/site/index.html" << 'SITEEOF'
@@ -1829,7 +1824,7 @@ SITEEOF
     panel_hash=$(docker exec sui-caddy caddy hash-password --plaintext "${panel_pass}" 2>/dev/null || echo "")
     
     if [[ -n "$panel_hash" ]]; then
-        # Update Caddyfile with basicauth
+        # Update Caddyfile with basicauth and additional headers
         cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
 {
     auto_https off

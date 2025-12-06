@@ -29,7 +29,7 @@ dig +short node1.example.com
 
 ---
 
-## 🚀 Quick Start
+## � Quick Start
 
 ### Prerequisites
 
@@ -90,7 +90,7 @@ curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo 
 
 ---
 
-## 📖 Architecture
+## � Architecture
 
 ```
 ┌─────────────────┐         ┌─────────────────┐
@@ -116,7 +116,7 @@ curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo 
 
 ---
 
-## 🔧 Management Commands
+## � Management Commands
 
 ```bash
 # View status
@@ -173,7 +173,7 @@ curl -fsSL https://raw.githubusercontent.com/pjonix/SUIS/main/install.sh | sudo 
 
 ---
 
-## 🔧 Troubleshooting
+## � Troubleshooting
 
 ### Quick Diagnostics
 
@@ -204,7 +204,7 @@ This will check:
 | **Node offline** | Check Node services: `cd /opt/sui-solo/node && docker compose ps` |
 | **Blank page** | Rebuild containers: `docker compose down && docker compose up -d --build` |
 
-📚 **Detailed Guide:** See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for comprehensive solutions
+� **Detailed Guide:** See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for comprehensive solutions
 
 🔍 **Recent Improvements:** See [IMPROVEMENTS.md](IMPROVEMENTS.md) for v1.9.22 enhancements
 
@@ -216,7 +216,7 @@ This project is for **educational purposes only**. Users must comply with local 
 
 ---
 
-## 📄 License
+## � License
 
 MIT License - see [LICENSE](LICENSE)
 

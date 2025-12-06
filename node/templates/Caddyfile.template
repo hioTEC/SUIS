@@ -1,65 +1,83 @@
-# Caddy runs on internal Docker network only (HTTP)
-# Receives fallback traffic from Sing-box on port 443
-:80 {
-    # Hidden API path (from Sing-box fallback)
-    handle /{HIDDEN_PATH}/* {
-        reverse_proxy agent:5001
-    }
+# Master domain configuration
+{{.MasterDomain}} {
+    header_up X-Forwarded-Proto https
+    reverse_proxy sui-master:5000
+}
+
+# Node domain configuration
+{{.NodeDomain}} {
+    # AdGuard Home Configuration
+    @adguard_host host {{.NodeDomain}}
+    @adguard_admin path /adguard/*
+    @adguard_api path /adguard/api*
+    @adguard_ui path /adguard/*
     
-    # AdGuard Home Web UI (optional, for internal access)
-    handle /adguard/* {
-        uri strip_prefix /adguard
-        reverse_proxy adguard:3000
+    # Basic authentication for admin paths (optional)
+    handle @adguard_admin {
+        @is_admin path /adguard/admin*
+        handle @is_admin {
+            basicauth {
+                admin {{.AdGuardAdminPass}}
+            }
+            uri strip_prefix /adguard/admin
+            reverse_proxy sui-adguard:3000 {
+                header_up X-Admin-Path "true"
+            }
+        }
+        
+        # Normal API access
+        handle @adguard_api {
+            uri strip_prefix /adguard/api
+            header_up X-Forwarded-Proto https
+            header_up X-Forwarded-For {http.request.remote.host}
+            header_up X-Real-IP {http.request.remote.host}
+            reverse_proxy sui-adguard:3000/api {
+                header_up Via "1.1 caddy"
+                header_up X-Forwarded-Host {host}
+            }
+        }
+        
+        # UI access
+        handle @adguard_ui {
+            uri strip_prefix /adguard
+            header_up X-Forwarded-Proto https
+            header_up X-Forwarded-For {http.request.remote.host}
+            header_up X-Real-IP {http.request.remote.host}
+            reverse_proxy sui-adguard:3000 {
+                header_up Via "1.1 caddy"
+                header_up X-Forwarded-Host {host}
+            }
+        }
     }
-    
-    # Camouflage website
+
+    # API endpoints
+    handle /{{.PathPrefix}}/api/v1/* {
+        header_up X-Forwarded-Proto https
+        reverse_proxy sui-agent:5001
+    }
+
+    # Health check endpoint
+    handle /health {
+        reverse_proxy sui-agent:5001
+    }
+
+    # Static content
     handle {
         root * /usr/share/caddy
-        file_server
-        
-        # Simple static page
-        respond / `<!DOCTYPE html>
-<html>
-<head>
-    <title>Welcome</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            max-width: 800px; 
-            margin: 50px auto; 
-            padding: 20px;
-            background: #f5f5f5;
+        file_server {
+            index index.html
+            not_found /index.html  # SPA fallback
         }
-        .container {
-            background: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        h1 { color: #333; margin-bottom: 20px; }
-        p { color: #666; line-height: 1.6; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Welcome to {NODE_DOMAIN}</h1>
-        <p>This is a personal website.</p>
-    </div>
-</body>
-</html>` 200
+        try_files {path} /index.html
     }
-    
+
     # Security headers
     header {
-        X-Frame-Options "DENY"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), camera=()"
         -Server
-    }
-    
-    log {
-        output file /var/log/caddy/access.log
-        level ERROR
     }
 }
