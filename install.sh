@@ -24,6 +24,17 @@ readonly NODE_INSTALL_DIR="/opt/sui-solo/node"
 readonly GATEWAY_DIR="/opt/sui-solo/gateway"
 readonly SALT="SUI_Solo_Secured_2025"
 
+# Error Codes
+readonly ERR_GENERAL=1
+readonly ERR_DEPENDENCY=101
+readonly ERR_DOCKER=102
+readonly ERR_PORT=103
+readonly ERR_OS=104
+readonly ERR_USER=105
+
+# Log file
+readonly LOG_FILE="/tmp/sui-solo-install.log"
+
 # Colors
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
@@ -43,20 +54,23 @@ readonly ARROW="${CYAN}➜${NC}"
 SHARED_CADDY_MODE=false
 INSTALL_MODE=""
 CLI_MODE=""
-domain=""
-master_domain=""
-node_domain=""
-email=""
-secret=""
+domain="${DOMAIN:-}"
+master_domain="${MASTER_DOMAIN:-}"
+node_domain="${NODE_DOMAIN:-}"
+email="${EMAIL:-}"
+secret="${SECRET:-}"
+
+# Initialize log file
+date > "$LOG_FILE"
 
 #=============================================================================
 # UTILS
 #=============================================================================
-log_info()    { echo -e "${BLUE}[INFO]${NC}    $1"; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-log_warn()    { echo -e "${YELLOW}[WARN]${NC}    $1"; }
-log_error()   { echo -e "${RED}[ERROR]${NC}   $1"; }
-log_step()    { echo -e "${ARROW} ${BOLD}$1${NC}"; }
+log_info()    { echo -e "${BLUE}[INFO]${NC}    $1"; echo "[INFO]    $1" >> "$LOG_FILE"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; echo "[SUCCESS] $1" >> "$LOG_FILE"; }
+log_warn()    { echo -e "${YELLOW}[WARN]${NC}    $1"; echo "[WARN]    $1" >> "$LOG_FILE"; }
+log_error()   { echo -e "${RED}[ERROR]${NC}   $1"; echo "[ERROR]   $1" >> "$LOG_FILE"; }
+log_step()    { echo -e "${ARROW} ${BOLD}$1${NC}"; echo "[STEP] $1" >> "$LOG_FILE"; }
 
 print_banner() {
     clear
@@ -76,6 +90,9 @@ EOF
 }
 
 confirm() {
+    if [[ "${FORCE_YES:-false}" == "true" ]]; then
+        return 0
+    fi
     local prompt="${1:-Proceed?}"
     local default="${2:-n}"
     [[ "$default" == "y" ]] && prompt="$prompt [Y/n]: " || prompt="$prompt [y/N]: "
@@ -144,18 +161,23 @@ SCRIPT_DIR="$(detect_script_dir)"
 #=============================================================================
 check_os() {
     OS_TYPE="unknown"
-    [[ "$OSTYPE" == "darwin"* ]] && OS_TYPE="macos" || true
-    [[ -f /etc/os-release ]] && OS_TYPE="linux" || true
+    [[ "$OSTYPE" == "darwin"* ]] && OS_TYPE="macos"
+    [[ -f /etc/os-release ]] && OS_TYPE="linux"
+    
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        log_error "macOS is not supported. Please run this script on a Linux server."
+        exit $ERR_OS
+    fi
+    if [[ "$OS_TYPE" != "linux" ]]; then
+        log_error "Unsupported OS: $OSTYPE. Linux is required."
+        exit $ERR_OS
+    fi
 }
 
 check_root() {
-    if [[ "$OS_TYPE" == "macos" ]]; then
-        [[ "$(id -u)" -ne 0 ]] && log_warn "Running as non-root on macOS. Ensure Docker permissions." || true
-    else
-        if [[ "$(id -u)" -ne 0 ]]; then
-            log_error "This script must be run as root on Linux!"
-            exit 1
-        fi
+    if [[ "$(id -u)" -ne 0 ]]; then
+        log_error "This script must be run as root on Linux!"
+        exit $ERR_USER
     fi
 }
 
@@ -163,61 +185,63 @@ check_dependencies() {
     log_step "Checking Dependencies..."
     local missing=() pkg_mgr=""
     
-    command -v brew &>/dev/null && pkg_mgr="brew"
     command -v apt-get &>/dev/null && pkg_mgr="apt"
     command -v yum &>/dev/null && pkg_mgr="yum"
+    command -v dnf &>/dev/null && pkg_mgr="dnf"
     command -v apk &>/dev/null && pkg_mgr="apk"
 
     for tool in curl openssl unzip; do
         command -v "$tool" &>/dev/null || missing+=("$tool")
     done
     
-    [[ "$OS_TYPE" == "macos" ]] && ! command -v lsof &>/dev/null && missing+=("lsof") || true
-    [[ "$OS_TYPE" == "linux" ]] && ! command -v ss &>/dev/null && missing+=("iproute2") || true
+    ! command -v ss &>/dev/null && missing+=("iproute2")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         log_info "Installing: ${missing[*]}"
         case "$pkg_mgr" in
-            brew) brew install "${missing[@]}" ;;
             apt)  apt-get update -qq && apt-get install -y -qq "${missing[@]}" ;;
             yum)  yum install -y "${missing[@]}" ;;
+            dnf)  dnf install -y "${missing[@]}" ;;
             apk)  apk add "${missing[@]}" ;;
-            *)    log_error "No package manager. Please install: ${missing[*]}"; exit 1 ;;
+            *)    log_error "No package manager. Please install: ${missing[*]}"; exit $ERR_DEPENDENCY ;;
         esac
     fi
     
     if ! command -v docker &>/dev/null; then
-        if [[ "$OS_TYPE" == "macos" ]]; then
-            log_error "Please install Docker Desktop for Mac manually."; exit 1
-        else
-            log_info "Installing Docker..."
-            curl -fsSL https://get.docker.com | sh
-            
-            # Fix iptables conflict before starting Docker
-            fix_iptables_conflict
-            
-            # Start Docker service (support both systemd and OpenRC)
-            if command -v systemctl &>/dev/null; then
-                systemctl enable docker && systemctl start docker
-            elif command -v rc-service &>/dev/null; then
-                rc-update add docker default && rc-service docker start
-            elif command -v service &>/dev/null; then
-                service docker start
-            fi
-            # Wait for Docker to be ready
-            log_info "Waiting for Docker to start..."
-            local retries=30
-            while ! docker info &>/dev/null && [[ $retries -gt 0 ]]; do
-                sleep 1
-                ((retries--))
-            done
-            if ! docker info &>/dev/null; then
-                log_error "Docker failed to start. Try manually: systemctl start docker OR service docker start"
-                log_warn "If issue persists, try: update-alternatives --set iptables /usr/sbin/iptables-legacy"
-                exit 1
-            fi
-            echo -e "  ${CHECK} Docker is ready"
+        log_warn "Docker is not installed."
+        log_warn "Automatic installation via https://get.docker.com will be attempted."
+        if ! confirm "Proceed with automatic Docker installation?" "y"; then
+             log_info "Please install Docker manually and re-run this script."
+             exit $ERR_DEPENDENCY
         fi
+        
+        log_info "Installing Docker..."
+        curl -fsSL https://get.docker.com | sh
+        
+        # Fix iptables conflict before starting Docker
+        fix_iptables_conflict
+        
+        # Start Docker service (support both systemd and OpenRC)
+        if command -v systemctl &>/dev/null; then
+            systemctl enable docker && systemctl start docker
+        elif command -v rc-service &>/dev/null; then
+            rc-update add docker default && rc-service docker start
+        elif command -v service &>/dev/null; then
+            service docker start
+        fi
+        # Wait for Docker to be ready
+        log_info "Waiting for Docker to start..."
+        local retries=30
+        while ! docker info &>/dev/null && [[ $retries -gt 0 ]]; do
+            sleep 1
+            ((retries--))
+        done
+        if ! docker info &>/dev/null; then
+            log_error "Docker failed to start. Try manually: systemctl start docker OR service docker start"
+            log_warn "If issue persists, try: update-alternatives --set iptables /usr/sbin/iptables-legacy"
+            exit $ERR_DOCKER
+        fi
+        echo -e "  ${CHECK} Docker is ready"
     else
         # Docker already installed, but check for iptables issues
         if ! docker info &>/dev/null; then
@@ -236,7 +260,7 @@ check_dependencies() {
             sleep 3
             if ! docker info &>/dev/null; then
                 log_error "Docker is not responding. Please check: systemctl status docker"
-                exit 1
+                exit $ERR_DOCKER
             fi
         fi
     fi
@@ -247,11 +271,7 @@ check_dependencies() {
 #=============================================================================
 check_port() {
     local port=$1
-    if [[ "$OS_TYPE" == "macos" ]]; then
-        lsof -i :"$port" >/dev/null 2>&1 && return 1
-    else
-        ss -tuln 2>/dev/null | grep -q ":${port} " && return 1
-    fi
+    ss -tuln 2>/dev/null | grep -q ":${port} " && return 1
     return 0
 }
 
@@ -269,14 +289,25 @@ kill_port_process() {
         fi
     done
     
-    # Then try to kill any remaining process on the port
-    if [[ "$OS_TYPE" == "macos" ]]; then
-        local pid=$(lsof -ti :$port 2>/dev/null)
-        [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null || true
+    # Check for other processes
+    local pid=$(ss -tlnp 2>/dev/null | grep ":${port} " | grep -oP 'pid=\K\d+' | head -1)
+    if [[ -z "$pid" ]]; then
+        pid=$(fuser "$port/tcp" 2>/dev/null | awk '{print $1}')
+    fi
+
+    if [[ -n "$pid" ]]; then
+        local pname=$(ps -p "$pid" -o comm= 2>/dev/null)
+        log_warn "Port $port is in use by process PID: $pid (Name: $pname)"
+        if confirm "Do you want to kill this process to release the port?" "n"; then
+             kill -9 "$pid" 2>/dev/null || true
+             sleep 1
+        else
+             log_error "Port $port is required to proceed. Please free it manually."
+             exit $ERR_PORT
+        fi
     else
-        local pid=$(ss -tlnp 2>/dev/null | grep ":${port} " | grep -oP 'pid=\K\d+' | head -1)
-        [[ -n "$pid" ]] && kill -9 $pid 2>/dev/null || true
-        fuser -k ${port}/tcp 2>/dev/null || true
+        # Just in case fuser finds something we missed
+        fuser -k "${port}/tcp" 2>/dev/null || true
     fi
     sleep 1
 }
@@ -287,6 +318,15 @@ check_ports_avail() {
         check_port "$p" || { blocked+=("$p"); log_warn "Port $p is in use."; }
     done
     if [[ ${#blocked[@]} -gt 0 ]]; then
+        if [[ "${FORCE_YES:-false}" == "true" ]]; then
+            log_warn "Auto-killing blocking processes due to FORCE_YES=true"
+            for p in "${blocked[@]}"; do kill_port_process "$p"; done
+            for p in "${blocked[@]}"; do
+                check_port "$p" || { log_error "Failed to free port $p"; exit 1; }
+            done
+            log_success "Ports freed successfully"
+            return
+        fi
         echo ""
         echo "  Options:"
         echo "    1) Kill processes and continue"
@@ -1272,7 +1312,12 @@ configure_firewall() {
     echo -e "    3000       - AdGuard Home Web UI (access via hidden path)"
     echo ""
     
-    read -r -p "  Additional ports to allow (space-separated, e.g., '8080 9000-9100'): " extra_ports < /dev/tty
+    if [[ "${FORCE_YES:-false}" == "true" ]]; then
+        extra_ports="${EXTRA_PORTS:-}"
+        log_info "Using EXTRA_PORTS: $extra_ports"
+    else
+        read -r -p "  Additional ports to allow (space-separated, e.g., '8080 9000-9100'): " extra_ports < /dev/tty
+    fi
     
     local all_ports="$default_ports $extra_ports"
     local all_ranges="$default_ranges"
@@ -1471,22 +1516,11 @@ uninstall() {
 #   - Hysteria2 on UDP 50200-50300
 # Note: sing-box doesn't support fallback, so we use separate domains
 #=============================================================================
-install_both() {
-    print_banner
-    check_os
-    check_root
-    
-    log_step "Installing Master + Node on same server (sing-box SNI mode)"
-    echo ""
-    
-    if [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" ]]; then
-        log_warn "Source files not found locally"
-        check_dependencies
-        download_source_files
-    fi
-    
-    check_dependencies
-    
+#=============================================================================
+# INSTALL BOTH (Modularized)
+#=============================================================================
+
+collect_both_config() {
     # Check for existing installation - Quick reinstall option
     if [[ -d "$MASTER_INSTALL_DIR" && -f "$MASTER_INSTALL_DIR/.env" ]] && \
        [[ -d "$NODE_INSTALL_DIR" && -f "$NODE_INSTALL_DIR/.env" ]]; then
@@ -1521,19 +1555,25 @@ install_both() {
         esac
     fi
     
-    # Only ask for input if not quick reinstall
+    # Collect inputs if not provided via env vars
     if [[ -z "$master_domain" ]]; then
         log_info "Master Configuration"
         read -r -p "  Enter Master Domain: " master_domain < /dev/tty
         master_domain=$(echo "$master_domain" | sed 's|https://||g' | sed 's|http://||g' | tr -d '/')
-        
+    fi
+    
+    if [[ -z "$node_domain" ]]; then
         log_info "Node Configuration"
         read -r -p "  Enter Node Domain: " node_domain < /dev/tty
         node_domain=$(echo "$node_domain" | sed 's|https://||g' | sed 's|http://||g' | tr -d '/')
-        
+    fi
+    
+    if [[ -z "$email" ]]; then
         read -r -p "  Enter Email [admin@example.com]: " email < /dev/tty
         email=${email:-admin@example.com}
-        
+    fi
+    
+    if [[ -z "$secret" ]]; then
         command -v openssl &>/dev/null && secret=$(openssl rand -hex 32) || \
             secret=$(head -c 64 /dev/urandom | sha256sum | cut -d' ' -f1)
     fi
@@ -1545,26 +1585,9 @@ install_both() {
     echo -e "  Email:  ${BOLD}${email}${NC}"
     echo ""
     confirm "Proceed?" "y" || exit 0
-    
-    # Stop existing containers first
-    log_info "Stopping existing containers..."
-    [[ -d "$GATEWAY_DIR" ]] && (cd "$GATEWAY_DIR" && docker compose down 2>/dev/null) || true
-    [[ -d "$MASTER_INSTALL_DIR" ]] && (cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null) || true
-    [[ -d "$NODE_INSTALL_DIR" ]] && (cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null) || true
-    
-    check_ports_avail 80 443 53
-    create_docker_networks
-    
-    # Generate path prefix for hidden API
-    local path_prefix=$(echo -n "${SALT}:${secret}" | sha256sum | cut -c1-16)
-    
-    # Generate UUID and password for proxies
-    local vless_uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-/')
-    local hy2_password=$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | sha256sum | cut -c1-32)
-    
-    #=========================================================================
-    # STEP 1: Install Master (without gateway)
-    #=========================================================================
+}
+
+install_master_component() {
     log_step "Installing Master..."
     mkdir -p "$MASTER_INSTALL_DIR"
     cp -r "${SCRIPT_DIR}/master/"* "$MASTER_INSTALL_DIR/"
@@ -1597,17 +1620,14 @@ EOF
     cd "$MASTER_INSTALL_DIR"
     docker compose up -d --build
     echo -e "  ${CHECK} Master container started"
-    
-    #=========================================================================
-    # STEP 2: Install Node (sing-box as SNI router on 443)
-    #=========================================================================
+}
+
+install_node_component() {
     log_step "Installing Node with SNI routing..."
     mkdir -p "$NODE_INSTALL_DIR/config/singbox" "$NODE_INSTALL_DIR/config/adguard/conf"
     cp -r "${SCRIPT_DIR}/node/"* "$NODE_INSTALL_DIR/"
     
-    # Node docker-compose:
-    # - sing-box: node.domain.com on 443 (VLESS)
-    # - Caddy: master.domain.com on 443 + port 80 redirect
+    # Node docker-compose
     cat > "$NODE_INSTALL_DIR/docker-compose.yml" << 'EOF'
 services:
   singbox:
@@ -1674,10 +1694,7 @@ networks:
     external: true
 EOF
     
-    # sing-box config: Port 443 Native with Caddy fallback
-    # Architecture: sing-box owns 443, Caddy on internal port 80
-    # - VLESS traffic: handled by sing-box directly
-    # - Non-VLESS traffic: falls back to Caddy for web serving
+    # sing-box config
     cat > "$NODE_INSTALL_DIR/config/singbox/config.json" << SBEOF
 {
   "log": {
@@ -1740,13 +1757,7 @@ SBEOF
     mkdir -p "$NODE_INSTALL_DIR/config/caddy/site"
     mkdir -p "$NODE_INSTALL_DIR/config/caddy/logs"
     
-    # Generate random password for Master panel basicauth
-    local panel_user="admin"
-    local panel_pass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
-    # Will generate bcrypt hash after Caddy container is running
-    local panel_hash=""
-    # Generate random password for AdGuard admin interface
-    local adguard_pass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
+    # Generate AdGuard config
     generate_adguard_config
     
     cat > "$NODE_INSTALL_DIR/.env" << EOF
@@ -1769,17 +1780,14 @@ EOF
     local template_file="${SCRIPT_DIR}/node/templates/Caddyfile.template"
     local output_file="$NODE_INSTALL_DIR/config/caddy/Caddyfile"
     
-    # 使用环境变量替换模板内容
     export MasterDomain="${master_domain}"
     export NodeDomain="${node_domain}"
     export PathPrefix="${path_prefix}"
     export AdGuardAdminPass="${adguard_pass}"
     
-    # 使用envsubst进行模板替换
     if command -v envsubst &>/dev/null; then
         envsubst < "$template_file" > "$output_file"
     else
-        # 如果envsubst不可用，使用awk替换
         awk -v md="${master_domain}" -v nd="${node_domain}" \
             -v pp="${path_prefix}" -v ap="${adguard_pass}" \
             '{gsub(/\{\{.MasterDomain\}\}/, md); 
@@ -1813,18 +1821,18 @@ EOF
 </html>
 SITEEOF
 
-    # Start Node containers (includes Caddy internally)
+    # Start Node containers
     cd "$NODE_INSTALL_DIR"
     docker compose up -d --build
-    echo -e "  ${CHECK} Node containers started (sing-box + Caddy + Agent + AdGuard)"
+    echo -e "  ${CHECK} Node containers started"
     
-    # Generate bcrypt hash using running Caddy container (no extra pull needed)
+    # Generate bcrypt hash
     sleep 2
     log_info "Generating basicauth credentials..."
     panel_hash=$(docker exec sui-caddy caddy hash-password --plaintext "${panel_pass}" 2>/dev/null || echo "")
     
     if [[ -n "$panel_hash" ]]; then
-        # Update Caddyfile with basicauth and additional headers
+        # Update Caddyfile with basicauth
         cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
 {
     auto_https off
@@ -1869,26 +1877,89 @@ SITEEOF
     }
 }
 CADDYEOF
-        # Reload Caddy config
         docker exec sui-caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true
         echo -e "  ${CHECK} Master panel basicauth enabled"
     else
-        log_warn "Could not generate bcrypt hash, Master panel has no password protection"
+        log_warn "Could not generate bcrypt hash"
     fi
     
     # Wait for ACME certificates
     log_info "Waiting for TLS certificates (this may take 1-2 minutes)..."
-    log_warn "sing-box will automatically obtain certificates via ACME HTTP-01..."
     sleep 15
+}
+
+auto_connect_node_to_master() {
+    log_info "Auto-connecting Node to Master..."
+    sleep 2
     
-    #=========================================================================
-    # STEP 3: Final setup
-    #=========================================================================
+    local node_name=$(echo "$node_domain" | cut -d. -f1 | tr '[:lower:]' '[:upper:]')
+    local node_id=$(echo -n "$node_domain" | md5sum | cut -c1-8)
+    
+    docker exec sui-master sh -c "mkdir -p /data && cat > /data/nodes.json << NODEEOF
+{
+  \"${node_id}\": {
+    \"name\": \"${node_name}\",
+    \"domain\": \"${node_domain}\",
+    \"https\": true,
+    \"added_at\": \"$(date -Iseconds)\",
+    \"status\": \"unknown\"
+  }
+}
+NODEEOF"
+    
+    if [[ $? -eq 0 ]]; then
+        echo -e "  ${CHECK} Node auto-connected to Master"
+    else
+        log_warn "Auto-connect failed. Please add node manually in Master panel."
+    fi
+}
+
+install_both() {
+    print_banner
+    check_os
+    check_root
+    
+    log_step "Installing Master + Node on same server (sing-box SNI mode)"
+    echo ""
+    
+    if [[ -z "$SCRIPT_DIR" || ! -d "${SCRIPT_DIR}/master" ]]; then
+        log_warn "Source files not found locally"
+        check_dependencies
+        download_source_files
+    fi
+    
+    check_dependencies
+    
+    collect_both_config
+    
+    log_info "Stopping existing containers..."
+    [[ -d "$GATEWAY_DIR" ]] && (cd "$GATEWAY_DIR" && docker compose down 2>/dev/null) || true
+    [[ -d "$MASTER_INSTALL_DIR" ]] && (cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null) || true
+    [[ -d "$NODE_INSTALL_DIR" ]] && (cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null) || true
+    
+    check_ports_avail 80 443 53
+    create_docker_networks
+    
+    # Global vars for component installation
+    path_prefix=$(echo -n "${SALT}:${secret}" | sha256sum | cut -c1-16)
+    vless_uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-/')
+    hy2_password=$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | sha256sum | cut -c1-32)
+    vless_port=443
+    
+    # Credentials for panel
+    panel_user="admin"
+    panel_pass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
+    panel_hash=""
+    adguard_pass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
+    
+    install_master_component
+    install_node_component
+    
+    # Summary
     # Wait for containers to be healthy
     log_info "Waiting for all containers to be ready..."
     sleep 3
     
-    # Generate proxy links
     local vless_link="vless://${vless_uuid}@${node_domain}:443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=${node_domain}&alpn=h2,http/1.1&type=tcp#${node_domain}-VLESS"
     local hy2_link="hysteria2://${hy2_password}@${node_domain}:50200?sni=${node_domain}&alpn=h3#${node_domain}-Hysteria2"
     
@@ -1901,6 +1972,7 @@ CADDYEOF
     echo -e "${MAGENTA}║${NC}  ${YELLOW}${secret}${NC}  ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
+    
     if [[ -n "$panel_hash" ]]; then
         echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
         echo -e "${CYAN}║${NC}  ${BOLD}MASTER PANEL LOGIN (Save this!)${NC}                              ${CYAN}║${NC}"
@@ -1933,33 +2005,8 @@ CADDYEOF
     echo -e "${hy2_link}"
     echo ""
     
-    # Auto-connect Node to Master
-    log_info "Auto-connecting Node to Master..."
-    sleep 2
+    auto_connect_node_to_master
     
-    local node_name=$(echo "$node_domain" | cut -d. -f1 | tr '[:lower:]' '[:upper:]')
-    local node_id=$(echo -n "$node_domain" | md5sum | cut -c1-8)
-    
-    docker exec sui-master sh -c "mkdir -p /data && cat > /data/nodes.json << NODEEOF
-{
-  \"${node_id}\": {
-    \"name\": \"${node_name}\",
-    \"domain\": \"${node_domain}\",
-    \"https\": true,
-    \"added_at\": \"$(date -Iseconds)\",
-    \"status\": \"unknown\"
-  }
-}
-NODEEOF"
-    
-    if [[ $? -eq 0 ]]; then
-        echo -e "  ${CHECK} Node auto-connected to Master"
-    else
-        log_warn "Auto-connect failed. Please add node manually in Master panel."
-    fi
-    echo ""
-    
-    # Offer firewall configuration
     configure_firewall_prompt
 }
 
