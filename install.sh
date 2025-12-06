@@ -469,7 +469,7 @@ start_shared_gateway() {
 reload_shared_gateway() {
     log_info "Reloading gateway configuration..."
     docker exec sui-gateway caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || \
-        (cd "$GATEWAY_DIR" && docker compose restart)
+        (cd "$GATEWAY_DIR" && docker compose restart) || true
 }
 
 generate_adguard_config() {
@@ -616,13 +616,13 @@ install_master() {
                 email="${existing_email}"
                 secret="${existing_secret}"
                 log_info "Stopping existing containers..."
-                cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
-                [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down 2>/dev/null || true
+                (cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null) || true
+                [[ -d "$GATEWAY_DIR" ]] && (cd "$GATEWAY_DIR" && docker compose down 2>/dev/null) || true
                 ;;
             2) 
                 log_info "Stopping existing containers..."
-                cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
-                [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down 2>/dev/null || true
+                (cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null) || true
+                [[ -d "$GATEWAY_DIR" ]] && (cd "$GATEWAY_DIR" && docker compose down 2>/dev/null) || true
                 ;;
             *) log_info "Cancelled"; exit 0 ;;
         esac
@@ -724,11 +724,11 @@ install_node() {
                 email="${existing_email}"
                 secret="${existing_secret}"
                 log_info "Stopping existing containers..."
-                cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true
+                (cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null) || true
                 ;;
             2) 
                 log_info "Stopping existing containers..."
-                cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true
+                (cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null) || true
                 ;;
             *) log_info "Cancelled"; exit 0 ;;
         esac
@@ -1428,10 +1428,10 @@ uninstall() {
             if [[ -d "$MASTER_INSTALL_DIR" ]]; then
                 confirm "Remove Master and all its data?" "n" || exit 0
                 log_info "Stopping existing containers..."
-                cd "$MASTER_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
+                (cd "$MASTER_INSTALL_DIR" && docker compose down -v 2>/dev/null) || true
                 rm -rf "$MASTER_INSTALL_DIR"
                 check_node_exists && check_gateway_exists && { generate_shared_caddyfile; reload_shared_gateway; } || \
-                    { [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down -v 2>/dev/null; rm -rf "$GATEWAY_DIR"; }
+                    { [[ -d "$GATEWAY_DIR" ]] && (cd "$GATEWAY_DIR" && docker compose down -v 2>/dev/null); rm -rf "$GATEWAY_DIR"; }
                 log_success "Master uninstalled!"
             else
                 log_warn "Master not installed"
@@ -1441,10 +1441,10 @@ uninstall() {
             if [[ -d "$NODE_INSTALL_DIR" ]]; then
                 confirm "Remove Node and all its data?" "n" || exit 0
                 log_info "Stopping existing containers..."
-                cd "$NODE_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
+                (cd "$NODE_INSTALL_DIR" && docker compose down -v 2>/dev/null) || true
                 rm -rf "$NODE_INSTALL_DIR"
                 check_master_exists && check_gateway_exists && { generate_shared_caddyfile; reload_shared_gateway; } || \
-                    { [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down -v 2>/dev/null; rm -rf "$GATEWAY_DIR"; }
+                    { [[ -d "$GATEWAY_DIR" ]] && (cd "$GATEWAY_DIR" && docker compose down -v 2>/dev/null); rm -rf "$GATEWAY_DIR"; }
                 log_success "Node uninstalled!"
             else
                 log_warn "Node not installed"
@@ -1453,9 +1453,9 @@ uninstall() {
         3)
             confirm "Remove ALL SUI Solo components and data?" "n" || exit 0
             log_info "Stopping existing containers..."
-            [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down -v 2>/dev/null || true
-            [[ -d "$MASTER_INSTALL_DIR" ]] && cd "$MASTER_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
-            [[ -d "$NODE_INSTALL_DIR" ]] && cd "$NODE_INSTALL_DIR" && docker compose down -v 2>/dev/null || true
+            [[ -d "$GATEWAY_DIR" ]] && (cd "$GATEWAY_DIR" && docker compose down -v 2>/dev/null) || true
+            [[ -d "$MASTER_INSTALL_DIR" ]] && (cd "$MASTER_INSTALL_DIR" && docker compose down -v 2>/dev/null) || true
+            [[ -d "$NODE_INSTALL_DIR" ]] && (cd "$NODE_INSTALL_DIR" && docker compose down -v 2>/dev/null) || true
             rm -rf /opt/sui-solo
             docker network rm sui-master-net sui-node-net 2>/dev/null || true
             log_success "All SUI Solo components uninstalled!"
@@ -1553,9 +1553,9 @@ install_both() {
     
     # Stop existing containers first
     log_info "Stopping existing containers..."
-    [[ -d "$GATEWAY_DIR" ]] && cd "$GATEWAY_DIR" && docker compose down 2>/dev/null || true
-    [[ -d "$MASTER_INSTALL_DIR" ]] && cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null || true
-    [[ -d "$NODE_INSTALL_DIR" ]] && cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null || true
+    [[ -d "$GATEWAY_DIR" ]] && (cd "$GATEWAY_DIR" && docker compose down 2>/dev/null) || true
+    [[ -d "$MASTER_INSTALL_DIR" ]] && (cd "$MASTER_INSTALL_DIR" && docker compose down 2>/dev/null) || true
+    [[ -d "$NODE_INSTALL_DIR" ]] && (cd "$NODE_INSTALL_DIR" && docker compose down 2>/dev/null) || true
     
     check_ports_avail 80 443 53
     create_docker_networks
