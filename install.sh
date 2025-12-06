@@ -1466,15 +1466,14 @@ uninstall() {
 }
 
 #=============================================================================
-# INSTALL BOTH (sing-box Port 443 Native)
+# INSTALL BOTH (Simplified: Separate domains)
 # Architecture:
-#   - sing-box owns 80/443 on host
-#   - Port 443: VLESS+Vision -> sing-box handles directly
-#   - Port 443: non-VLESS (browser) -> fallback to Caddy:80 (internal)
-#   - Port 80: sing-box ACME HTTP-01 challenge (auto-handled)
-#   - Caddy runs on internal network only (no host port binding)
-#   - Caddy:80 routes by Host header to Master or Node services
+#   - node.domain.com:443 -> sing-box (VLESS + Hysteria2)
+#   - master.domain.com:443 -> Caddy (Master panel)
+#   - Both use ACME for their own domains
+#   - Port 80: Caddy handles HTTP->HTTPS redirect
 #   - Hysteria2 on UDP 50200-50300
+# Note: sing-box doesn't support fallback, so we use separate domains
 #=============================================================================
 install_both() {
     print_banner
@@ -1611,8 +1610,8 @@ EOF
     cp -r "${SCRIPT_DIR}/node/"* "$NODE_INSTALL_DIR/"
     
     # Node docker-compose:
-    # - sing-box owns 80/443 on host (VLESS + ACME HTTP-01)
-    # - Caddy internal only (no host port binding)
+    # - sing-box: node.domain.com on 443 (VLESS)
+    # - Caddy: master.domain.com on 443 + port 80 redirect
     cat > "$NODE_INSTALL_DIR/docker-compose.yml" << 'EOF'
 services:
   singbox:
@@ -1620,28 +1619,28 @@ services:
     container_name: sui-singbox
     restart: unless-stopped
     ports:
-      - "80:80/tcp"
-      - "443:443/tcp"
+      - "8443:8443/tcp"
       - "50200-50300:50200-50300/udp"
     volumes:
       - ./config/singbox:/etc/sing-box
+      - ./config/caddy/data:/etc/caddy-certs:ro
     command: ["run", "-c", "/etc/sing-box/config.json"]
     networks:
       - sui-node-net
-      - sui-master-net
     cap_add: [NET_ADMIN]
-    depends_on:
-      - caddy
     
   caddy:
     image: caddy:2-alpine
     container_name: sui-caddy
     restart: unless-stopped
-    expose: ["80"]
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
     volumes:
       - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./config/caddy/site:/usr/share/caddy:ro
       - ./config/caddy/logs:/var/log/caddy
+      - ./config/caddy/data:/data
     networks:
       - sui-node-net
       - sui-master-net
@@ -1679,10 +1678,10 @@ networks:
     external: true
 EOF
     
-    # sing-box config: Port 443 Native with fallback to Caddy
-    # - Port 443: VLESS traffic -> sing-box handles directly
-    # - Port 443: non-VLESS (browser) -> fallback to Caddy:80 (internal)
-    # - Port 80: ACME HTTP-01 challenge (sing-box auto-handles)
+    # sing-box config: Port 443 Native with Caddy fallback
+    # Architecture: sing-box owns 443, Caddy on internal port 80
+    # - VLESS traffic: handled by sing-box directly
+    # - Non-VLESS traffic: falls back to Caddy for web serving
     cat > "$NODE_INSTALL_DIR/config/singbox/config.json" << SBEOF
 {
   "log": {
@@ -1694,7 +1693,7 @@ EOF
       "type": "vless",
       "tag": "vless-in",
       "listen": "::",
-      "listen_port": 443,
+      "listen_port": 8443,
       "users": [
         {
           "uuid": "${vless_uuid}",
@@ -1704,22 +1703,8 @@ EOF
       "tls": {
         "enabled": true,
         "server_name": "${node_domain}",
-        "acme": {
-          "domain": ["${node_domain}", "${master_domain}"],
-          "email": "${email}",
-          "provider": "letsencrypt",
-          "data_directory": "/etc/sing-box/acme"
-        }
-      },
-      "fallback": {
-        "server": "sui-caddy",
-        "server_port": 80
-      },
-      "fallback_for_alpn": {
-        "h2": {
-          "server": "sui-caddy",
-          "server_port": 80
-        }
+        "key_path": "/etc/caddy-certs/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${node_domain}/${node_domain}.key",
+        "certificate_path": "/etc/caddy-certs/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${node_domain}/${node_domain}.crt"
       }
     },
     {
@@ -1735,12 +1720,8 @@ EOF
       "tls": {
         "enabled": true,
         "server_name": "${node_domain}",
-        "acme": {
-          "domain": ["${node_domain}"],
-          "email": "${email}",
-          "provider": "letsencrypt",
-          "data_directory": "/etc/sing-box/acme"
-        }
+        "key_path": "/etc/sing-box/acme/${node_domain}/key.pem",
+        "certificate_path": "/etc/sing-box/acme/${node_domain}/cert.pem"
       },
       "up_mbps": 100,
       "down_mbps": 100
@@ -1786,45 +1767,29 @@ PANEL_USER=${panel_user}
 PANEL_PASS=${panel_pass}
 EOF
 
-    # Caddyfile: Initial config (basicauth will be added after container starts)
+    # Caddyfile: Standard HTTPS for both domains
+    # Master panel and Node web interface on standard ports
+    # VLESS proxy uses port 8443 (users connect to node.domain.com:8443)
     cat > "$NODE_INSTALL_DIR/config/caddy/Caddyfile" << CADDYEOF
-{
-    auto_https off
+${master_domain} {
+    reverse_proxy sui-master:5000
 }
 
-:80 {
-    @master host ${master_domain}
-    handle @master {
-        reverse_proxy sui-master:5000
+${node_domain} {
+    handle /${path_prefix}/api/v1/* {
+        reverse_proxy sui-agent:5001
     }
-    
-    @node host ${node_domain}
-    handle @node {
-        handle /${path_prefix}/api/v1/* {
-            reverse_proxy sui-agent:5001
-        }
-        handle /adguard/* {
-            uri strip_prefix /adguard
-            reverse_proxy sui-adguard:3000
-        }
-        handle /health {
-            reverse_proxy sui-agent:5001
-        }
-        handle {
-            root * /usr/share/caddy
-            file_server
-            try_files {path} /index.html
-        }
+    handle /adguard/* {
+        uri strip_prefix /adguard
+        reverse_proxy sui-adguard:3000
     }
-    
+    handle /health {
+        reverse_proxy sui-agent:5001
+    }
     handle {
-        respond "Not Found" 404
-    }
-    
-    header -Server
-    log {
-        output file /var/log/caddy/access.log
-        level ERROR
+        root * /usr/share/caddy
+        file_server
+        try_files {path} /index.html
     }
 }
 CADDYEOF
