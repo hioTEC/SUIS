@@ -1,11 +1,11 @@
-# Master domain configuration
-{{.MasterDomain}} {
+# Master domain configuration - HTTP only on port 80
+http://{{.MasterDomain}}:80 {
     header_up X-Forwarded-Proto https
     reverse_proxy sui-master:5000
 }
 
-# Node domain configuration
-{{.NodeDomain}} {
+# Node domain configuration - HTTP only on port 80
+http://{{.NodeDomain}}:80 {
     # AdGuard Home Configuration
     @adguard_host host {{.NodeDomain}}
     @adguard_admin path /adguard/*

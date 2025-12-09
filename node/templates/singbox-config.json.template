@@ -30,6 +30,10 @@
       },
       "transport": {
         "type": "tcp"
+      },
+      "fallback": {
+        "server": "${GATEWAY_CONTAINER}",
+        "server_port": 80
       }
     },
     {
