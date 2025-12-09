@@ -23,14 +23,35 @@ apt-get update && apt-get install -y jq git
 
 ### 步骤 2: 下载代码
 
-```bash
-# 克隆仓库（或上传代码）
-cd /tmp
-git clone <your-repo-url> sui-proxy
-cd sui-proxy
+**方案 A: 使用一键部署脚本（推荐）**
 
-# 或者从本地上传
-# scp -r . root@your-server:/tmp/sui-proxy
+```bash
+# 下载并运行一键部署脚本
+curl -fsSL https://raw.githubusercontent.com/your-username/sui-proxy/main/server-deploy.sh | sudo bash
+```
+
+**方案 B: 手动克隆仓库**
+
+```bash
+# 克隆仓库
+cd /tmp
+git clone https://github.com/your-username/sui-proxy.git
+cd sui-proxy
+```
+
+**方案 C: 从本地上传**
+
+```bash
+# 在本地打包
+tar -czf sui-proxy.tar.gz .
+
+# 上传到服务器
+scp sui-proxy.tar.gz root@your-server:/tmp/
+
+# 在服务器上解压
+ssh root@your-server
+cd /tmp
+tar -xzf sui-proxy.tar.gz
 ```
 
 ### 步骤 3: 运行安装

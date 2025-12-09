@@ -1,0 +1,99 @@
+{
+    email {$EMAIL}
+    admin localhost:2019
+    persist_config off
+    servers {
+        protocols h1 h2 h2c h3
+        strict_sni_host insecure_off
+    }
+}
+
+# 自动HTTPS配置
+{$DOMAIN} {
+    # 日志配置
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10mb
+            roll_keep 10
+        }
+        format json
+    }
+    
+    # 根路径重定向到master面板
+    redir / https://master.{$DOMAIN}{uri}
+}
+
+# Master控制面板
+master.{$DOMAIN} {
+    # 启用HTTPS
+    tls {$EMAIL} {
+        protocols tls1.2 tls1.3
+        curves x25519 secp384r1 secp521r1
+        alpn http/1.1 h2 h3
+    }
+    
+    # 反向代理到master服务
+    reverse_proxy localhost:{$ADMIN_PORT} {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        
+        # 健康检查
+        health_uri /health
+        health_interval 30s
+        health_timeout 5s
+    }
+    
+    # 静态文件服务
+    handle /static/* {
+        root * /var/www/master/static
+        file_server
+        encode gzip
+    }
+    
+    # WebSocket支持
+    handle /ws/* {
+        reverse_proxy localhost:{$ADMIN_PORT} {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+}
+
+# Node代理节点
+node.{$DOMAIN} {
+    # 这个域名由Singbox处理，这里配置回退
+    tls {$EMAIL}
+    
+    # 返回节点信息
+    respond "SUI Proxy Node - {$NODE_ID}" 200 {
+        header Content-Type "text/plain"
+    }
+}
+
+# 通配符子域名处理
+*.{$DOMAIN} {
+    tls {$EMAIL}
+    
+    # 默认页面
+    file_server {
+        root /var/www/default
+        index index.html
+    }
+    
+    # 错误页面
+    handle_errors {
+        @404 {
+            expression {http.error.status_code} == 404
+        }
+        rewrite @404 /404.html
+        file_server
+    }
+}
+
+# HTTP重定向到HTTPS
+http://{$DOMAIN},
+http://*.{$DOMAIN} {
+    redir https://{host}{uri} permanent
+}

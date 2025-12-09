@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  singbox:
+    image: ghcr.io/sagernet/sing-box:latest
+    container_name: sui-singbox
+    restart: unless-stopped
+    ports:
+      - "443:443/tcp"
+      - "50200-50300:50200-50300/udp"
+    volumes:
+      - ./config/singbox:/etc/sing-box:ro
+      - singbox_acme:/etc/sing-box/acme
+    networks:
+      - sui-node-net
+      - sui-master-net
+    depends_on:
+      - gateway
+    cap_add:
+      - NET_ADMIN
+    command: run -c /etc/sing-box/config.json
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "--no-check-certificate", "https://localhost:443"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  gateway:
+    image: caddy:2-alpine
+    container_name: sui-gateway
+    restart: unless-stopped
+    expose:
+      - "80"
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - sui-node-net
+      - sui-master-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  singbox_acme:
+    name: sui-singbox-acme
+  caddy_data:
+    name: sui-caddy-data
+  caddy_config:
+    name: sui-caddy-config
+
+networks:
+  sui-node-net:
+    external: true
+  sui-master-net:
+    external: true
